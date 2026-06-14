@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Carbon.HIToolbox
 
 /// The configurable set of toolbar actions: built-ins + up to 4 custom actions,
 /// reorderable, toggleable, with editable prompts. Persisted in UserDefaults.
@@ -8,11 +9,13 @@ final class ActionStore: ObservableObject {
     static let maxCustom = 4
 
     @Published private(set) var actions: [ActionDef] = []
-    private let key = "actionsConfig.v1"
+    private let key = "actionsConfig.v2"
+    private let legacyKey = "actionsConfig.v1"
 
     static let builtins: [ActionDef] = [
         ActionDef(id: "read", name: "朗读", icon: "speaker.wave.2.fill",
-                  enabled: true, isBuiltin: true, needsLLM: false, prompt: ""),
+                  enabled: true, isBuiltin: true, needsLLM: false, prompt: "",
+                  hotKeyCode: 15, hotKeyMods: controlKey | shiftKey, hotKeyDisplay: "⌃⇧R"),
         ActionDef(id: "explain", name: "解释", icon: "lightbulb.fill",
                   enabled: true, isBuiltin: true, needsLLM: true,
                   prompt: "用简洁、口语化的简体中文解释下面这段文本的意思，三到五句话，直接给结论，不要客套，不要逐字复述原文。"),
@@ -37,23 +40,27 @@ final class ActionStore: ObservableObject {
     init() { load() }
 
     func load() {
-        if let data = UserDefaults.standard.data(forKey: key),
+        let defaults = UserDefaults.standard
+        let data = defaults.data(forKey: key) ?? defaults.data(forKey: legacyKey)
+        if let data,
            let saved = try? JSONDecoder().decode([ActionDef].self, from: data),
            !saved.isEmpty {
             // Append any newly-added built-ins not present in the saved config.
             var result = saved
             let ids = Set(saved.map { $0.id })
             for b in ActionStore.builtins where !ids.contains(b.id) { result.append(b) }
-            actions = result
+            actions = normalized(result, applyNewDefaults: defaults.data(forKey: key) == nil)
         } else {
             actions = ActionStore.builtins
         }
     }
 
     private func save() {
+        actions = normalized(actions, applyNewDefaults: false)
         if let d = try? JSONEncoder().encode(actions) {
             UserDefaults.standard.set(d, forKey: key)
         }
+        NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
     }
 
     var enabled: [ActionDef] { actions.filter { $0.enabled } }
@@ -61,19 +68,19 @@ final class ActionStore: ObservableObject {
     var canAddCustom: Bool { customCount < ActionStore.maxCustom }
 
     func move(from: IndexSet, to: Int) {
+        guard !from.contains(0), to != 0 else { return }
         actions.move(fromOffsets: from, toOffset: to)
         save()
     }
 
-    func moveUp(_ id: String) {
-        guard let i = actions.firstIndex(where: { $0.id == id }), i > 0 else { return }
-        actions.swapAt(i, i - 1)
-        save()
-    }
-
-    func moveDown(_ id: String) {
-        guard let i = actions.firstIndex(where: { $0.id == id }), i < actions.count - 1 else { return }
-        actions.swapAt(i, i + 1)
+    func move(_ id: String, before targetID: String) {
+        guard id != "read", targetID != "read",
+              let from = actions.firstIndex(where: { $0.id == id }),
+              let target = actions.firstIndex(where: { $0.id == targetID }),
+              from != target else { return }
+        let item = actions.remove(at: from)
+        let adjustedTarget = actions.firstIndex(where: { $0.id == targetID }) ?? target
+        actions.insert(item, at: max(1, adjustedTarget))
         save()
     }
 
@@ -86,16 +93,37 @@ final class ActionStore: ObservableObject {
     func update(_ def: ActionDef) {
         guard let i = actions.firstIndex(where: { $0.id == def.id }) else { return }
         actions[i] = def
+        removeDuplicateHotKey(keeping: i)
+        save()
+    }
+
+    func setHotKey(_ id: String, code: Int?, mods: Int?, display: String?) {
+        guard let i = actions.firstIndex(where: { $0.id == id }) else { return }
+        actions[i].hotKeyCode = code
+        actions[i].hotKeyMods = mods
+        actions[i].hotKeyDisplay = display
+        removeDuplicateHotKey(keeping: i)
         save()
     }
 
     @discardableResult
-    func addCustom(name: String, icon: String, prompt: String) -> Bool {
+    func addCustom(_ def: ActionDef) -> Bool {
         guard canAddCustom else { return false }
-        actions.append(ActionDef(id: UUID().uuidString, name: name, icon: icon,
-                                 enabled: true, isBuiltin: false, needsLLM: true, prompt: prompt))
+        var custom = def
+        custom.id = custom.id.isEmpty ? UUID().uuidString : custom.id
+        custom.enabled = true
+        custom.isBuiltin = false
+        custom.needsLLM = true
+        actions.append(custom)
+        removeDuplicateHotKey(keeping: actions.count - 1)
         save()
         return true
+    }
+
+    @discardableResult
+    func addCustom(name: String, icon: String, prompt: String) -> Bool {
+        addCustom(ActionDef(id: UUID().uuidString, name: name, icon: icon,
+                            enabled: true, isBuiltin: false, needsLLM: true, prompt: prompt))
     }
 
     func delete(_ id: String) {
@@ -106,5 +134,29 @@ final class ActionStore: ObservableObject {
     func resetToDefaults() {
         actions = ActionStore.builtins
         save()
+    }
+
+    private func removeDuplicateHotKey(keeping index: Int) {
+        guard actions.indices.contains(index),
+              let code = actions[index].hotKeyCode,
+              let mods = actions[index].hotKeyMods else { return }
+        for j in actions.indices where j != index && actions[j].hotKeyCode == code && actions[j].hotKeyMods == mods {
+            actions[j].hotKeyCode = nil
+            actions[j].hotKeyMods = nil
+            actions[j].hotKeyDisplay = nil
+        }
+    }
+
+    private func normalized(_ list: [ActionDef], applyNewDefaults: Bool) -> [ActionDef] {
+        var normalized = list
+        if applyNewDefaults, let i = normalized.firstIndex(where: { $0.id == "read" }),
+           normalized[i].hotKeyCode == nil, normalized[i].hotKeyMods == nil {
+            normalized[i].hotKeyCode = 15
+            normalized[i].hotKeyMods = controlKey | shiftKey
+            normalized[i].hotKeyDisplay = "⌃⇧R"
+        }
+        guard let readIndex = normalized.firstIndex(where: { $0.id == "read" }) else { return normalized }
+        let read = normalized.remove(at: readIndex)
+        return [read] + normalized
     }
 }

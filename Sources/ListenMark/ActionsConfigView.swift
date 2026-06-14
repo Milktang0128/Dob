@@ -1,10 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Manage toolbar actions: reorder, enable/disable, edit prompts, and add up to
 /// 4 custom actions with their own generation prompts (e.g. 拆解句法 / 记单词).
 struct ActionsConfigView: View {
     @ObservedObject private var store = ActionStore.shared
     @State private var editing: EditTarget?
+    @State private var draggingID: String?
 
     struct EditTarget: Identifiable {
         let id = UUID()
@@ -15,10 +17,15 @@ struct ActionsConfigView: View {
     var body: some View {
         List {
             Section {
-                ForEach(store.actions) { def in row(def) }
-                    .onMove { store.move(from: $0, to: $1) }
+                ForEach(store.actions) { def in
+                    row(def)
+                        .onDrop(of: [.text],
+                                delegate: ActionDropDelegate(targetID: def.id,
+                                                             draggingID: $draggingID,
+                                                             store: store))
+                }
             } header: {
-                Text("用 ↑↓ 调序（也可拖动）· 开关启用 · 可改名/改提示词；自定义技能可删除")
+                Text("朗读固定第一；拖动左侧把手调整其它技能；快捷键会直接处理当前选中文本")
             }
 
             Section {
@@ -44,7 +51,7 @@ struct ActionsConfigView: View {
             ActionEditor(target: target,
                          onSave: { result in
                              if target.isNew {
-                                 store.addCustom(name: result.name, icon: result.icon, prompt: result.prompt)
+                                 store.addCustom(result)
                              } else {
                                  store.update(result)
                              }
@@ -56,6 +63,7 @@ struct ActionsConfigView: View {
 
     private func row(_ def: ActionDef) -> some View {
         HStack(spacing: 10) {
+            dragHandle(def)
             Toggle("", isOn: Binding(get: { def.enabled }, set: { store.setEnabled(def.id, $0) }))
                 .labelsHidden().controlSize(.small)
             Image(systemName: def.icon).frame(width: 22).foregroundStyle(.secondary)
@@ -67,24 +75,69 @@ struct ActionsConfigView: View {
                     .foregroundStyle(.tertiary)
             }
             Spacer()
+            HotkeyRecorder(display: Binding(get: { def.hotKeyDisplay ?? "未设置" }, set: { _ in })) { code, mods, disp in
+                store.setHotKey(def.id, code: Int(code), mods: carbonModifiers(mods), display: disp)
+            }
+            .frame(width: 96, height: 22)
+            .help("设置此技能的全局快捷键")
+            if def.hotKeyDisplay != nil {
+                Button {
+                    store.setHotKey(def.id, code: nil, mods: nil, display: nil)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .help("清除快捷键")
+            }
             Button("编辑") { editing = EditTarget(def: def, isNew: false) }
                 .buttonStyle(.link)
             if !def.isBuiltin {
                 Button { store.delete(def.id) } label: { Image(systemName: "trash") }
                     .buttonStyle(.plain).foregroundStyle(.secondary).help("删除")
             }
-            VStack(spacing: 1) {
-                Button { store.moveUp(def.id) } label: { Image(systemName: "chevron.up") }
-                    .disabled(def.id == store.actions.first?.id)
-                Button { store.moveDown(def.id) } label: { Image(systemName: "chevron.down") }
-                    .disabled(def.id == store.actions.last?.id)
-            }
-            .buttonStyle(.borderless)
-            .font(.system(size: 9, weight: .bold))
-            .foregroundStyle(.secondary)
-            .help("调整顺序")
         }
         .padding(.vertical, 3)
+    }
+
+    @ViewBuilder private func dragHandle(_ def: ActionDef) -> some View {
+        if def.id == "read" {
+            Image(systemName: "pin.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .frame(width: 18)
+                .help("朗读固定第一，不参与排序")
+        } else {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+                .help("拖动排序")
+                .onDrag {
+                    draggingID = def.id
+                    return NSItemProvider(object: def.id as NSString)
+                }
+        }
+    }
+}
+
+private struct ActionDropDelegate: DropDelegate {
+    let targetID: String
+    @Binding var draggingID: String?
+    let store: ActionStore
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingID, draggingID != targetID else { return }
+        store.move(draggingID, before: targetID)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingID = nil
+        return true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
     }
 }
 
@@ -121,6 +174,25 @@ private struct ActionEditor: View {
                 }
                 Spacer()
                 Image(systemName: target.def.icon).font(.system(size: 22)).foregroundStyle(Color.accentColor)
+            }
+
+            HStack(spacing: 10) {
+                Text("快捷键").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                HotkeyRecorder(display: Binding(get: { target.def.hotKeyDisplay ?? "未设置" },
+                                                set: { target.def.hotKeyDisplay = $0 })) { code, mods, disp in
+                    target.def.hotKeyCode = Int(code)
+                    target.def.hotKeyMods = carbonModifiers(mods)
+                    target.def.hotKeyDisplay = disp
+                }
+                .frame(width: 120, height: 24)
+                if target.def.hotKeyDisplay != nil {
+                    Button("清除") {
+                        target.def.hotKeyCode = nil
+                        target.def.hotKeyMods = nil
+                        target.def.hotKeyDisplay = nil
+                    }
+                }
             }
 
             if target.def.needsLLM {

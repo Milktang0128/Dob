@@ -10,6 +10,24 @@ struct ActionDef: Identifiable, Codable, Equatable {
     var isBuiltin: Bool
     var needsLLM: Bool
     var prompt: String
+    var hotKeyCode: Int?
+    var hotKeyMods: Int?
+    var hotKeyDisplay: String?
+
+    init(id: String, name: String, icon: String, enabled: Bool, isBuiltin: Bool,
+         needsLLM: Bool, prompt: String, hotKeyCode: Int? = nil,
+         hotKeyMods: Int? = nil, hotKeyDisplay: String? = nil) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.enabled = enabled
+        self.isBuiltin = isBuiltin
+        self.needsLLM = needsLLM
+        self.prompt = prompt
+        self.hotKeyCode = hotKeyCode
+        self.hotKeyMods = hotKeyMods
+        self.hotKeyDisplay = hotKeyDisplay
+    }
 }
 
 /// One archived interaction. `action`/`icon` are stored by value so custom and

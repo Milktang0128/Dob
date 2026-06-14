@@ -32,6 +32,7 @@ final class RecorderButton: NSButton {
         action = #selector(begin)
     }
     required init?(coder: NSCoder) { fatalError() }
+    deinit { stop() }
 
     @objc private func begin() {
         recording = true
@@ -43,9 +44,14 @@ final class RecorderButton: NSButton {
     }
 
     private func capture(_ e: NSEvent) {
+        if e.keyCode == 53 {
+            stop()
+            return
+        }
         let mods = e.modifierFlags.intersection([.command, .option, .control, .shift])
         guard !mods.isEmpty else { NSSound.beep(); return } // require a modifier
         let chars = (e.charactersIgnoringModifiers ?? "").uppercased()
+        guard !chars.isEmpty else { NSSound.beep(); return }
         let disp = Self.symbols(mods) + chars
         title = disp
         stop()

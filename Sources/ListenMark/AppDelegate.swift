@@ -27,10 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = ArchiveStore.shared
+        _ = ActionStore.shared
         setupMainMenu()
         setupStatusItem()
         wirePanel()
-        HotkeyManager.shared.onFire = { [weak self] in self?.triggerCapture() }
         applyConfig()
         NotificationCenter.default.addObserver(self, selector: #selector(applyConfig),
                                                name: .gebwConfigChanged, object: nil)
@@ -38,6 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                           name: NSWorkspace.didActivateApplicationNotification, object: nil)
         if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { enableAX(pid) }
         checkTrust()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            GitHubReleaseUpdater.shared.checkAutomaticallyIfNeeded()
+        }
     }
 
     @objc private func appActivated(_ note: Notification) {
@@ -113,14 +116,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Config (hotkey + auto-pop)
 
     @objc private func applyConfig() {
-        HotkeyManager.shared.register(keyCode: UInt32(Settings.hotKeyCode),
-                                      carbonModifiers: UInt32(Settings.hotKeyMods))
+        HotkeyManager.shared.unregisterAll()
+        HotkeyManager.shared.register(id: 1,
+                                      keyCode: UInt32(Settings.hotKeyCode),
+                                      carbonModifiers: UInt32(Settings.hotKeyMods)) { [weak self] in
+            self?.triggerCapture()
+        }
+        registerActionHotKeys()
         triggerMenuItem?.title = "处理选中文本  \(Settings.hotKeyDisplay)"
 
         if let m = mouseUpMonitor { NSEvent.removeMonitor(m); mouseUpMonitor = nil }
         if Settings.autoPop {
             mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
                 self?.handleSelectionMouseUp()
+            }
+        }
+    }
+
+    private func registerActionHotKeys() {
+        for (index, action) in ActionStore.shared.actions.enumerated() {
+            guard action.enabled,
+                  let keyCode = action.hotKeyCode,
+                  let mods = action.hotKeyMods else { continue }
+            HotkeyManager.shared.register(id: UInt32(1_000 + index),
+                                          keyCode: UInt32(keyCode),
+                                          carbonModifiers: UInt32(mods)) { [weak self] in
+                self?.triggerAction(action.id)
             }
         }
     }
@@ -160,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(menu, "打开档案…", #selector(openArchive))
         add(menu, "编辑技能…", #selector(openActions))
         add(menu, "设置…", #selector(openSettings))
+        add(menu, "检查更新…", #selector(checkForUpdates))
         menu.addItem(.separator())
         add(menu, "辅助功能权限设置…", #selector(openAXPrefs))
         add(menu, "打开档案文件夹", #selector(openArchiveFolder))
@@ -186,6 +208,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func triggerFromMenu() { triggerCapture() }
 
     private func triggerCapture() {
+        triggerSelection(actionID: nil)
+    }
+
+    private func triggerAction(_ actionID: String) {
+        triggerSelection(actionID: actionID)
+    }
+
+    private func triggerSelection(actionID: String?) {
         currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? "未知来源"
         SelectionGrabber.grabAsync { [weak self] text in
             guard let self else { return }
@@ -204,6 +234,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.currentResult = ""
             self.pendingEntry = nil
             self.showPanel()
+            if let actionID {
+                guard let action = ActionStore.shared.actions.first(where: { $0.id == actionID }) else {
+                    self.panel.model.phase = .error("这个技能不存在或已被删除")
+                    return
+                }
+                self.perform(action)
+            }
         }
     }
 
@@ -352,6 +389,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    @MainActor @objc private func checkForUpdates() {
+        GitHubReleaseUpdater.shared.checkNow()
     }
 
     @objc private func openArchiveFolder() {

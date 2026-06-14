@@ -11,8 +11,8 @@ ListenMark（中文名：过耳不忘）是一款 macOS 原生菜单栏 App：
 
 当前发行包：
 
-- `ListenMark-0.1.0-arm64.dmg`
-- `ListenMark-0.1.0-arm64.zip`
+- `ListenMark-0.1.1-arm64.dmg`
+- `ListenMark-0.1.1-arm64.zip`
 
 ## 当前能力
 
@@ -26,6 +26,7 @@ ListenMark（中文名：过耳不忘）是一款 macOS 原生菜单栏 App：
 - 文本动作走 DeepSeek（`deepseek-chat`，OpenAI 兼容接口）。
 - 语音合成默认用 macOS 本地语音（离线、免配置）；可在设置里切到火山引擎（豆包语音）TTS，失败自动回退本地。
 - 数据默认只存在本地：`~/Library/Application Support/ListenMark/`（`archive.json` + `ListenMark.md`）。
+- 启动后会定期检查 GitHub Releases；菜单栏耳朵图标 → **检查更新...** 可手动同步最新安装包。
 
 ## 构建 & 运行
 
@@ -52,7 +53,8 @@ swift run
 
 ## 用法
 
-- 任意应用里选中文字 → 面板自动弹出（或按全局快捷键，默认 `Option + Command + R`）。
+- 任意应用里选中文字 → 面板自动弹出（或按弹出面板快捷键，默认 `Option + Command + R`）。
+- 每个技能都可以设置自己的全局快捷键；按下后会直接取当前选中文本并执行该技能。朗读默认 `Control + Shift + R`。
 - 点 **朗读** 立刻念；点 **解释 / 翻译 / 提炼 / 背景** 走 DeepSeek 再念。
 - 菜单栏耳朵图标 → **打开档案...** 查看 / 搜索 / 重听历史。
 

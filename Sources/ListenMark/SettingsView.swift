@@ -30,7 +30,7 @@ struct SettingsView: View {
                         NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
                     }
                 HStack {
-                    Text("全局快捷键")
+                    Text("弹出面板快捷键")
                     Spacer()
                     HotkeyRecorder(display: $hkDisplay) { code, mods, disp in
                         Settings.hotKeyCode = Int(code)
@@ -68,7 +68,7 @@ struct SettingsView: View {
             }
 
             Section("技能") {
-                Text("在 菜单栏 👂 → 编辑技能… 里排序、禁用、或新增最多 4 个自定义技能（自定义提示词）。")
+                Text("在 菜单栏 👂 → 编辑技能… 里排序、设置每个技能的快捷键、禁用、或新增最多 4 个自定义技能。技能快捷键会直接处理当前选中文本。")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
