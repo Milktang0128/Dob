@@ -102,7 +102,7 @@ final class ArchiveStore: ObservableObject {
     private func exportMarkdown() {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm"
-        var md = "# ListenMark · 档案\n\n"
+        var md = "# 过耳不忘 · 档案\n\n"
         for e in entries {
             md += "## \(e.action) · \(df.string(from: e.date)) · \(e.sourceApp)\n\n"
             md += "> \(e.original.replacingOccurrences(of: "\n", with: "\n> "))\n\n"

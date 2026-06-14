@@ -63,7 +63,7 @@ struct SettingsView: View {
                         Button("用默认") { archiveFolder = ""; ArchiveStore.shared.relocate() }
                     }
                 }
-                Text("可读的「ListenMark.md」会写到这里——放进 Obsidian 库即可随时查看、供后续 agent 管理。")
+                Text("可读的档案 Markdown 会写到这里——放进 Obsidian 库即可随时查看、供后续 agent 管理。")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -124,7 +124,7 @@ struct SettingsView: View {
 
                 Button("试听") {
                     Settings.speechRate = Float(rate)
-                    Speaker.shared.speak("ListenMark，这是当前语音的试听效果。")
+                    Speaker.shared.speak("过耳不忘，这是当前语音的试听效果。")
                 }
             }
         }

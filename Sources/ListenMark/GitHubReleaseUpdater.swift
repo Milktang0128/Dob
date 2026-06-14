@@ -74,7 +74,7 @@ final class GitHubReleaseUpdater {
         当前版本：\(currentVersion)
         安装包：\(asset.name)（\(size)）
 
-        下载后会自动打开 DMG，你可以把 ListenMark 拖到 Applications 里完成更新。
+        下载后会自动打开 DMG，你可以把「过耳不忘」拖到 Applications 里完成更新。
         """
         alert.addButton(withTitle: "下载并打开")
         alert.addButton(withTitle: "查看发布页")

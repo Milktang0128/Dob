@@ -1,7 +1,9 @@
-# ListenMark
+# 过耳不忘
 
-ListenMark（中文名：过耳不忘）是一款 macOS 原生菜单栏 App：
+**过耳不忘**是一款 macOS 原生菜单栏 App：
 划词选中任何文本 → 选一个**语音化动作**（朗读 / 解释 / 翻译 / 提炼 / 背景）→ 结果用语音念出 → 每次交互**自动留档**，可搜索、可回看、可重听。
+
+安装后的 App 名称是「过耳不忘」。仓库、SwiftPM target 和发行包文件名保留英文 `ListenMark`，用于 GitHub 发布和自动更新。
 
 ## Download
 
@@ -11,8 +13,8 @@ ListenMark（中文名：过耳不忘）是一款 macOS 原生菜单栏 App：
 
 当前发行包：
 
-- `ListenMark-0.1.1-arm64.dmg`
-- `ListenMark-0.1.1-arm64.zip`
+- `ListenMark-0.1.2-arm64.dmg`
+- `ListenMark-0.1.2-arm64.zip`
 
 ## 当前能力
 
@@ -25,14 +27,14 @@ ListenMark（中文名：过耳不忘）是一款 macOS 原生菜单栏 App：
 
 - 文本动作走 DeepSeek（`deepseek-chat`，OpenAI 兼容接口）。
 - 语音合成默认用 macOS 本地语音（离线、免配置）；可在设置里切到火山引擎（豆包语音）TTS，失败自动回退本地。
-- 数据默认只存在本地：`~/Library/Application Support/ListenMark/`（`archive.json` + `ListenMark.md`）。
+- 数据默认只存在本地：`~/Library/Application Support/ListenMark/`（沿用旧内部目录，包含 `archive.json` + `ListenMark.md`）。
 - 启动后会定期检查 GitHub Releases；菜单栏耳朵图标 → **检查更新...** 可手动同步最新安装包。
 
 ## 构建 & 运行
 
 ```bash
 ./make-app.sh
-open ListenMark.app
+open 过耳不忘.app
 ```
 
 或开发时直接：
@@ -42,11 +44,11 @@ swift run
 ```
 
 > 每次重新构建都会 ad-hoc 重新签名，macOS 会作废旧的辅助功能授权。
-> 重新构建后请到 系统设置 > 隐私与安全性 > 辅助功能 把旧的 `ListenMark` 移除再重新添加，并重启 App。
+> 重新构建后请到 系统设置 > 隐私与安全性 > 辅助功能 把旧授权移除再重新添加「过耳不忘」，并重启 App。
 
 ## 首次启用
 
-1. 启动后授予**辅助功能**权限（读取选中文本所必需）：系统设置 > 隐私与安全性 > 辅助功能 → 打开 `ListenMark` → 重启 App。
+1. 启动后授予**辅助功能**权限（读取选中文本所必需）：系统设置 > 隐私与安全性 > 辅助功能 → 打开「过耳不忘」→ 重启 App。
 2. 菜单栏耳朵图标 → **设置...**：
    - **DeepSeek API Key**：解释 / 翻译 / 提炼 / 背景 需要。
    - **语音合成引擎**：默认本地；要用豆包音色就选「火山引擎」并填 App ID / Access Token / 音色。

@@ -94,9 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "隐藏 ListenMark", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "隐藏 过耳不忘", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 ListenMark", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "退出 过耳不忘", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
 
         let editItem = NSMenuItem()
@@ -165,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let btn = statusItem.button {
-            btn.image = NSImage(systemSymbolName: "ear", accessibilityDescription: "ListenMark")
+            btn.image = NSImage(systemSymbolName: "ear", accessibilityDescription: "过耳不忘")
             btn.image?.isTemplate = true
         }
         let menu = NSMenu()
@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(menu, "辅助功能权限设置…", #selector(openAXPrefs))
         add(menu, "打开档案文件夹", #selector(openArchiveFolder))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "退出 ListenMark", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "退出 过耳不忘", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         menu.delegate = self
         statusItem.menu = menu
     }
@@ -370,19 +370,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openArchive() {
-        showWindow(&archiveWindow, size: NSSize(width: 880, height: 580), title: "ListenMark · 档案") { ArchiveView() }
+        showWindow(&archiveWindow, size: NSSize(width: 880, height: 580), title: "过耳不忘 · 档案") { ArchiveView() }
     }
 
     @objc private func openSettings() {
-        showWindow(&settingsWindow, size: NSSize(width: 470, height: 640), title: "ListenMark · 设置") { SettingsView() }
+        showWindow(&settingsWindow, size: NSSize(width: 470, height: 640), title: "过耳不忘 · 设置") { SettingsView() }
     }
 
     @objc private func openActions() {
-        showWindow(&actionsWindow, size: NSSize(width: 520, height: 560), title: "ListenMark · 编辑技能") { ActionsConfigView() }
+        showWindow(&actionsWindow, size: NSSize(width: 520, height: 560), title: "过耳不忘 · 编辑技能") { ActionsConfigView() }
     }
 
     @objc private func openReview() {
-        showWindow(&reviewWindow, size: NSSize(width: 520, height: 600), title: "ListenMark · 今日回响") { ReviewView() }
+        showWindow(&reviewWindow, size: NSSize(width: 520, height: 600), title: "过耳不忘 · 今日回响") { ReviewView() }
     }
 
     @objc private func openAXPrefs() {
@@ -404,9 +404,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let alert = NSAlert()
         alert.messageText = "需要「辅助功能」权限"
         alert.informativeText = """
-        ListenMark 需要「辅助功能」权限，才能读取你在其它应用里选中的文本。
+        过耳不忘需要「辅助功能」权限，才能读取你在其它应用里选中的文本。
 
-        请在 系统设置 › 隐私与安全性 › 辅助功能 中打开 ListenMark，然后重新启动本应用。
+        请在 系统设置 › 隐私与安全性 › 辅助功能 中打开「过耳不忘」，然后重新启动本应用。
         """
         alert.addButton(withTitle: "打开设置")
         alert.addButton(withTitle: "稍后")

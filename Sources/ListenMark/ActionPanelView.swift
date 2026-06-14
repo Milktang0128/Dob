@@ -13,7 +13,7 @@ final class PanelModel: ObservableObject {
 
     @Published var phase: Phase = .idle
     @Published var active: String?      // active action id (drives the accent)
-    @Published var contentWidth: CGFloat = 380   // measured to fit the enabled skills
+    @Published var contentWidth: CGFloat = 320   // measured to fit the enabled skills
 
     var onPick: ((ActionDef) -> Void)?
     var onReplay: (() -> Void)?
@@ -189,9 +189,10 @@ private struct ActionItem: View {
                 Image(systemName: def.icon)
                     .font(.system(size: 13, weight: .medium))
                     .symbolRenderingMode(.hierarchical)
+                    .frame(width: 14)
                 Text(def.name).font(.system(size: 12)).lineLimit(1)
             }
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 8)
             .frame(height: 28)
             .foregroundStyle(active ? Color.accentColor : Color.primary)
             .background(Capsule().fill(fill))

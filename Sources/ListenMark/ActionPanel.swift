@@ -9,12 +9,12 @@ final class ActionPanel: NSPanel {
     let model = PanelModel()
 
     private var cancellable: AnyCancellable?
-    private let panelWidth: CGFloat = 380
+    private let minPanelWidth: CGFloat = 320
     private let barHeight: CGFloat = 40
-    private var currentWidth: CGFloat = 380
+    private var currentWidth: CGFloat = 320
 
     init() {
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 380, height: 40),
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 320, height: 40),
                    styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
                    backing: .buffered, defer: false)
         isFloatingPanel = true
@@ -28,7 +28,7 @@ final class ActionPanel: NSPanel {
 
         let host = NSHostingView(rootView: ActionPanelView(model: model))
         host.autoresizingMask = [.width, .height]
-        host.frame = NSRect(x: 0, y: 0, width: panelWidth, height: barHeight)
+        host.frame = NSRect(x: 0, y: 0, width: minPanelWidth, height: barHeight)
         contentView = host
 
         cancellable = model.$phase
@@ -65,15 +65,20 @@ final class ActionPanel: NSPanel {
         let font = NSFont.systemFont(ofSize: 12)
         let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         var w: CGFloat = 16 + 14   // toolbar h-padding (8+8) + grip
+        var childCount = 1
         for def in ActionStore.shared.enabled {
             let labelW = (def.name as NSString).size(withAttributes: [.font: font]).width
-            let iconW = NSImage(systemSymbolName: def.icon, accessibilityDescription: nil)?
-                .withSymbolConfiguration(cfg)?.size.width ?? 18
-            // ActionItem = hpad(18) + icon + spacing(5) + label ; + hstack gap(2)
-            w += 18 + ceil(iconW) + 5 + ceil(labelW) + 2
+            let measuredIconW = NSImage(systemSymbolName: def.icon, accessibilityDescription: nil)?
+                .withSymbolConfiguration(cfg)?.size.width ?? 14
+            let iconW = min(ceil(measuredIconW), 14)
+            // ActionItem = hpad(16) + icon + spacing(5) + label.
+            w += 16 + iconW + 5 + ceil(labelW)
+            childCount += 1
         }
-        w += 5 + 26 + 22 + 8   // divider + ··· menu + × close + gaps
-        return max(panelWidth, ceil(w) + 4)
+        w += 5 + 26 + 22   // divider + ··· menu + × close
+        childCount += 3
+        w += CGFloat(max(childCount - 1, 0)) * 2
+        return max(minPanelWidth, ceil(w))
     }
 
     func showNearMouse() {
