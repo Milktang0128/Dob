@@ -11,6 +11,29 @@ final class ActionStore: ObservableObject {
     @Published private(set) var actions: [ActionDef] = []
     private let key = "actionsConfig.v2"
     private let legacyKey = "actionsConfig.v1"
+    private let defaultHotkeysKey = "actionsConfig.defaultHotkeys.v3"
+    private let defaultPromptsKey = "actionsConfig.defaultPrompts.v4"
+
+    private static let optimizedPrompts: [String: String] = [
+        "explain": "用简体中文解释选中内容。先用一句话说清它的核心意思，再补充关键术语、隐含背景或句子关系，让人听完能真正理解。三到五句，口语化，直接给结论，不要逐字复述原文。",
+        "translate": "根据选中内容的语言自动翻译：中文译成自然地道的英文，其他语言译成自然流畅的简体中文。结合上下文判断语气、指代和专业术语，保留必要的人名、产品名和专有名词。只输出译文，不要解释、注释或前后缀。",
+        "summarize": "用简体中文提炼选中内容的核心要点。先给一句明确结论，再用一到两句补充关键原因、条件或影响。总共不超过三句，适合快速听懂，不要罗列细节或复述原文。",
+        "background": "围绕选中内容补充必要背景知识，说明它是什么、为什么重要，以及需要知道的相关概念、人物、事件或场景。三到五句，简洁口语化，帮助用户听懂当前文本，不要展开成百科介绍，也不要逐字复述原文。",
+        "mnemonic": "为选中内容设计一个容易记住的助记法。先用一句话点明要记住的核心，再给出一个生动的联想、口诀、谐音、画面或首字记忆法，最后简单说明怎么用它回忆原意。简体中文，三到五句，适合朗读。",
+        "closeread": "下面通常是一段英文。用简体中文做精读：先点出句子主干和整体意思，再说明从句、短语或修饰成分如何连接，最后挑出二到四个关键词或短语解释含义和在句中的作用。口语化、条理清楚、适合朗读，不要逐字翻译整句。"
+    ]
+
+    private static let previousDefaultPrompts: [String: Set<String>] = [
+        "explain": ["用简洁、口语化的简体中文解释下面这段文本的意思，三到五句话，直接给结论，不要客套，不要逐字复述原文。"],
+        "translate": ["如果下面的文本是中文，就把它翻译成自然地道的英文；否则翻译成自然流畅的简体中文。只输出译文本身，不要解释或前后缀。"],
+        "summarize": ["用一句简体中文概括下面文本的核心要点，直接给结论。"],
+        "background": [
+            "为下面这段文本补充必要的背景知识，简体中文，三到四句，便于听懂，不要逐字复述原文。",
+            "为下面的选中内容补充必要的背景知识，简体中文，三到四句，便于听懂，不要逐字复述原文。如果同时提供全文上下文，只把它当作理解选中内容的依据，不要概括整篇全文。"
+        ],
+        "mnemonic": ["为下面这段文本设计一个好记的助记法，帮我快速记住它的核心。可以灵活使用谐音、联想、口诀、首字记忆、画面感的比喻等方式。用简体中文：先用一句话点明「要记住什么」，再给出助记法，简洁、生动、适合朗读，不要复述原文。"],
+        "closeread": ["下面是一段英文。用简体中文帮我精读，分两部分：① 句式拆解——先点出句子主干（主语+谓语+宾语），再说明各从句、短语和修饰成分是怎么挂接的，让我听懂这句话的结构；② 重点词——挑出 2 到 4 个较难或关键的单词/短语，给出中文释义、读音提示，并说明它在本句里的作用。口语化、条理清楚、适合朗读，不要逐字翻译整句。"]
+    ]
 
     static let builtins: [ActionDef] = [
         ActionDef(id: "read", name: "朗读", icon: "speaker.wave.2.fill",
@@ -18,23 +41,25 @@ final class ActionStore: ObservableObject {
                   hotKeyCode: 15, hotKeyMods: controlKey | shiftKey, hotKeyDisplay: "⌃⇧R"),
         ActionDef(id: "explain", name: "解释", icon: "lightbulb.fill",
                   enabled: true, isBuiltin: true, needsLLM: true,
-                  prompt: "用简洁、口语化的简体中文解释下面这段文本的意思，三到五句话，直接给结论，不要客套，不要逐字复述原文。"),
+                  prompt: optimizedPrompts["explain"]!,
+                  hotKeyCode: kVK_ANSI_E, hotKeyMods: controlKey | shiftKey, hotKeyDisplay: "⌃⇧E"),
         ActionDef(id: "translate", name: "翻译", icon: "globe",
                   enabled: true, isBuiltin: true, needsLLM: true,
-                  prompt: "如果下面的文本是中文，就把它翻译成自然地道的英文；否则翻译成自然流畅的简体中文。只输出译文本身，不要解释或前后缀。"),
+                  prompt: optimizedPrompts["translate"]!,
+                  hotKeyCode: kVK_ANSI_T, hotKeyMods: controlKey | shiftKey, hotKeyDisplay: "⌃⇧T"),
         ActionDef(id: "summarize", name: "提炼", icon: "list.bullet.rectangle.fill",
                   enabled: true, isBuiltin: true, needsLLM: true,
-                  prompt: "用一句简体中文概括下面文本的核心要点，直接给结论。"),
+                  prompt: optimizedPrompts["summarize"]!),
         ActionDef(id: "background", name: "背景", icon: "sparkles",
                   enabled: true, isBuiltin: true, needsLLM: true,
-                  prompt: "为下面这段文本补充必要的背景知识，简体中文，三到四句，便于听懂，不要逐字复述原文。"),
+                  prompt: optimizedPrompts["background"]!),
         // Preset plays — shipped but OFF by default; enable in 动作按钮.
         ActionDef(id: "mnemonic", name: "助记", icon: "brain.head.profile",
                   enabled: false, isBuiltin: true, needsLLM: true,
-                  prompt: "为下面这段文本设计一个好记的助记法，帮我快速记住它的核心。可以灵活使用谐音、联想、口诀、首字记忆、画面感的比喻等方式。用简体中文：先用一句话点明「要记住什么」，再给出助记法，简洁、生动、适合朗读，不要复述原文。"),
+                  prompt: optimizedPrompts["mnemonic"]!),
         ActionDef(id: "closeread", name: "精读", icon: "character.book.closed",
                   enabled: false, isBuiltin: true, needsLLM: true,
-                  prompt: "下面是一段英文。用简体中文帮我精读，分两部分：① 句式拆解——先点出句子主干（主语+谓语+宾语），再说明各从句、短语和修饰成分是怎么挂接的，让我听懂这句话的结构；② 重点词——挑出 2 到 4 个较难或关键的单词/短语，给出中文释义、读音提示，并说明它在本句里的作用。口语化、条理清楚、适合朗读，不要逐字翻译整句。")
+                  prompt: optimizedPrompts["closeread"]!)
     ]
 
     init() { load() }
@@ -42,6 +67,8 @@ final class ActionStore: ObservableObject {
     func load() {
         let defaults = UserDefaults.standard
         let data = defaults.data(forKey: key) ?? defaults.data(forKey: legacyKey)
+        let shouldApplyDefaultHotKeys = defaults.object(forKey: defaultHotkeysKey) == nil
+        let shouldApplyDefaultPrompts = defaults.object(forKey: defaultPromptsKey) == nil
         if let data,
            let saved = try? JSONDecoder().decode([ActionDef].self, from: data),
            !saved.isEmpty {
@@ -49,18 +76,30 @@ final class ActionStore: ObservableObject {
             var result = saved
             let ids = Set(saved.map { $0.id })
             for b in ActionStore.builtins where !ids.contains(b.id) { result.append(b) }
-            actions = normalized(result, applyNewDefaults: defaults.data(forKey: key) == nil)
+            actions = normalized(result,
+                                 applyNewDefaults: defaults.data(forKey: key) == nil,
+                                 applyDefaultHotKeys: shouldApplyDefaultHotKeys,
+                                 applyDefaultPrompts: shouldApplyDefaultPrompts)
         } else {
             actions = ActionStore.builtins
+        }
+        if shouldApplyDefaultHotKeys || shouldApplyDefaultPrompts {
+            defaults.set(true, forKey: defaultHotkeysKey)
+            defaults.set(true, forKey: defaultPromptsKey)
+            persist()
         }
     }
 
     private func save() {
         actions = normalized(actions, applyNewDefaults: false)
+        persist()
+        NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+    }
+
+    private func persist() {
         if let d = try? JSONEncoder().encode(actions) {
             UserDefaults.standard.set(d, forKey: key)
         }
-        NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
     }
 
     var enabled: [ActionDef] { actions.filter { $0.enabled } }
@@ -137,26 +176,79 @@ final class ActionStore: ObservableObject {
     }
 
     private func removeDuplicateHotKey(keeping index: Int) {
-        guard actions.indices.contains(index),
-              let code = actions[index].hotKeyCode,
-              let mods = actions[index].hotKeyMods else { return }
-        for j in actions.indices where j != index && actions[j].hotKeyCode == code && actions[j].hotKeyMods == mods {
-            actions[j].hotKeyCode = nil
-            actions[j].hotKeyMods = nil
-            actions[j].hotKeyDisplay = nil
+        removeDuplicateHotKey(keeping: index, in: &actions)
+    }
+
+    private func removeDuplicateHotKey(keeping index: Int, in list: inout [ActionDef]) {
+        guard list.indices.contains(index),
+              let code = list[index].hotKeyCode,
+              let mods = list[index].hotKeyMods else { return }
+        for j in list.indices where j != index && list[j].hotKeyCode == code && list[j].hotKeyMods == mods {
+            list[j].hotKeyCode = nil
+            list[j].hotKeyMods = nil
+            list[j].hotKeyDisplay = nil
         }
     }
 
-    private func normalized(_ list: [ActionDef], applyNewDefaults: Bool) -> [ActionDef] {
+    private func normalized(_ list: [ActionDef], applyNewDefaults: Bool,
+                            applyDefaultHotKeys: Bool = false,
+                            applyDefaultPrompts: Bool = false) -> [ActionDef] {
         var normalized = list
         if applyNewDefaults, let i = normalized.firstIndex(where: { $0.id == "read" }),
            normalized[i].hotKeyCode == nil, normalized[i].hotKeyMods == nil {
             normalized[i].hotKeyCode = 15
             normalized[i].hotKeyMods = controlKey | shiftKey
             normalized[i].hotKeyDisplay = "⌃⇧R"
+            removeDuplicateHotKey(keeping: i, in: &normalized)
         }
-        guard let readIndex = normalized.firstIndex(where: { $0.id == "read" }) else { return normalized }
-        let read = normalized.remove(at: readIndex)
-        return [read] + normalized
+        if applyDefaultHotKeys {
+            applyDefaultHotKey("explain", code: Int(kVK_ANSI_E), display: "⌃⇧E", in: &normalized)
+            applyDefaultHotKey("translate", code: Int(kVK_ANSI_T), display: "⌃⇧T", in: &normalized)
+        }
+        if applyDefaultPrompts {
+            applyOptimizedDefaultPrompts(in: &normalized)
+        }
+        if let readIndex = normalized.firstIndex(where: { $0.id == "read" }) {
+            let read = normalized.remove(at: readIndex)
+            normalized = [read] + normalized
+        }
+        deduplicateHotKeys(in: &normalized)
+        return normalized
+    }
+
+    private func applyDefaultHotKey(_ id: String, code: Int, display: String, in actions: inout [ActionDef]) {
+        guard let i = actions.firstIndex(where: { $0.id == id }),
+              actions[i].hotKeyCode == nil,
+              actions[i].hotKeyMods == nil else { return }
+        actions[i].hotKeyCode = code
+        actions[i].hotKeyMods = controlKey | shiftKey
+        actions[i].hotKeyDisplay = display
+        removeDuplicateHotKey(keeping: i, in: &actions)
+    }
+
+    private func applyOptimizedDefaultPrompts(in actions: inout [ActionDef]) {
+        for i in actions.indices {
+            let id = actions[i].id
+            guard actions[i].isBuiltin,
+                  let optimized = Self.optimizedPrompts[id],
+                  Self.previousDefaultPrompts[id]?.contains(actions[i].prompt) == true else { continue }
+            actions[i].prompt = optimized
+        }
+    }
+
+    private func deduplicateHotKeys(in actions: inout [ActionDef]) {
+        var seen = Set<String>()
+        for i in actions.indices {
+            guard let code = actions[i].hotKeyCode,
+                  let mods = actions[i].hotKeyMods else { continue }
+            let key = "\(code):\(mods)"
+            if seen.contains(key) {
+                actions[i].hotKeyCode = nil
+                actions[i].hotKeyMods = nil
+                actions[i].hotKeyDisplay = nil
+            } else {
+                seen.insert(key)
+            }
+        }
     }
 }

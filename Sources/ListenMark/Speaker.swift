@@ -1,7 +1,8 @@
 import AVFoundation
 
 /// Voice-first output with streaming support.
-/// - One-shot `speak` for replay / 试听.
+/// - One-shot `speak` for first playback / 试听.
+/// - `replay` reuses the last generated Volcano audio when possible.
 /// - `startStream` → `feed(sentence)` × N → `endStream` for speaking as text arrives.
 /// Local engine queues utterances natively; 火山 synthesizes each sentence and
 /// plays them back-to-back through a serial audio queue. 火山 failure falls back
@@ -11,6 +12,8 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
 
     private let synth = AVSpeechSynthesizer()
     private var player: AVAudioPlayer?
+    private var lastGeneratedAudio: (text: String, data: Data)?
+    private var playbackGeneration = 0
 
     private var streaming = false
     private var volcQueue: [String] = []
@@ -25,20 +28,41 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         stop()
+        let generation = nextPlaybackGeneration()
         if useVolcano {
             Task { [weak self] in
                 do {
                     let data = try await VolcanoTTS.synthesize(t)
                     guard let self else { return }
-                    await MainActor.run { self.playThen(data) {} }
+                    await MainActor.run {
+                        guard self.playbackGeneration == generation else { return }
+                        self.lastGeneratedAudio = (t, data)
+                        self.playThen(data) {}
+                    }
                 } catch {
                     NSLog("ListenMark · 火山 TTS 失败，回退本地语音：\(error)")
                     guard let self else { return }
-                    await MainActor.run { self.localSpeak(t) }
+                    await MainActor.run {
+                        guard self.playbackGeneration == generation else { return }
+                        self.lastGeneratedAudio = nil
+                        self.localSpeak(t)
+                    }
                 }
             }
         } else {
+            lastGeneratedAudio = nil
             localSpeak(t)
+        }
+    }
+
+    func replay(_ text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        stop()
+        if let audio = lastGeneratedAudio, audio.text == t {
+            playThen(audio.data) {}
+        } else {
+            speak(t)
         }
     }
 
@@ -65,6 +89,7 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
     // MARK: Stop
 
     func stop() {
+        playbackGeneration += 1
         streaming = false
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         player?.stop(); player = nil
@@ -83,6 +108,11 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
     }
 
     private func localSpeak(_ t: String) { synth.speak(utterance(for: t)) }
+
+    private func nextPlaybackGeneration() -> Int {
+        playbackGeneration += 1
+        return playbackGeneration
+    }
 
     private func startDrainIfNeeded() {
         guard !volcDraining else { return }

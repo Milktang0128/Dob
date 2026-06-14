@@ -2,13 +2,17 @@ import SwiftUI
 import AVFoundation
 
 struct SettingsView: View {
+    private static let volcanoVoiceListURL = URL(string: "https://www.volcengine.com/docs/6561/1257544?lang=zh")!
+
     @AppStorage("autoPop") private var autoPop = true
     @AppStorage("hkDisplay") private var hkDisplay = "⌥⌘R"
+    @AppStorage("ocrHkDisplay") private var ocrHkDisplay = "⌃⇧O"
     @AppStorage("autoArchive") private var autoArchive = false
     @AppStorage("archiveFolder") private var archiveFolder = ""
 
     @AppStorage("deepseekKey") private var deepseekKey = ""
     @AppStorage("deepseekModel") private var deepseekModel = "deepseek-v4-flash"
+    @AppStorage("useFullContext") private var useFullContext = true
 
     @AppStorage("ttsEngine") private var ttsEngine = "volcano"
     @AppStorage("volcAppId") private var volcAppId = ""
@@ -39,7 +43,26 @@ struct SettingsView: View {
                         hkDisplay = disp
                         NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
                     }
-                    .frame(width: 150, height: 22)
+                    .frame(width: 176, height: 22)
+                }
+            }
+
+            Section("高级取词") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("屏幕选框 OCR")
+                        Text("无法直接取词时，按快捷键框选屏幕区域，识别出的文字会进入同一个处理面板。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    HotkeyRecorder(display: $ocrHkDisplay) { code, mods, disp in
+                        Settings.ocrHotKeyCode = Int(code)
+                        Settings.ocrHotKeyMods = carbonModifiers(mods)
+                        Settings.ocrHotKeyDisplay = disp
+                        ocrHkDisplay = disp
+                        NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+                    }
+                    .frame(width: 176, height: 22)
                 }
             }
 
@@ -68,11 +91,22 @@ struct SettingsView: View {
             }
 
             Section("技能") {
-                Text("在 菜单栏 👂 → 编辑技能… 里排序、设置每个技能的快捷键、禁用、或新增最多 4 个自定义技能。技能快捷键会直接处理当前选中文本。")
+                HStack {
+                    Text("排序、设置快捷键、禁用、或新增最多 4 个自定义技能。技能快捷键会直接处理当前选中文本。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("编辑技能…") {
+                        NotificationCenter.default.post(name: .gebwOpenActions, object: nil)
+                    }
+                }
+                Text("朗读固定在第一位；浮窗显示前 5 个启用技能，其余收在更多菜单。")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("解释 / 翻译模型（DeepSeek）") {
+                Toggle("默认使用全文上下文", isOn: $useFullContext)
+                Text("开启后，解释、翻译、提炼、背景和自定义技能会尽量读取当前文本控件或页面的可访问上下文，只把它作为选中内容的参考；拿不到时自动回退。")
+                    .font(.caption).foregroundStyle(.secondary)
                 SecureField("DeepSeek API Key（sk-…）", text: $deepseekKey)
                 TextField("模型", text: $deepseekModel)
                 Text("默认 deepseek-v4-flash（快）；也可填 deepseek-chat / deepseek-reasoner。")
@@ -102,6 +136,9 @@ struct SettingsView: View {
                             Text("自定义（\(volcVoice)）").tag(volcVoice)
                         }
                     }
+                    Link("查看官方完整音色列表，复制 voice_type 填到下方 ↗",
+                         destination: Self.volcanoVoiceListURL)
+                        .font(.caption)
                     TextField("自定义 voice_type（可选）", text: $volcVoice)
                     TextField("Cluster", text: $volcCluster)
                     HStack {
@@ -113,7 +150,7 @@ struct SettingsView: View {
                         Text("未填 App ID / Access Token，暂时回退本地语音。")
                             .font(.caption).foregroundStyle(.orange)
                     }
-                    Text("音色需在火山控制台开通；下拉为常用大模型音色，也可手填任意 voice_type。")
+                    Text("音色需在火山控制台开通；下拉只列常用大模型音色，完整列表以官方文档为准。")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
                     HStack {

@@ -30,7 +30,8 @@ final class HotkeyManager {
     }
 
     /// Carbon modifier mask = cmdKey | optionKey | controlKey | shiftKey.
-    func register(id: UInt32, keyCode: UInt32, carbonModifiers: UInt32, onFire: @escaping () -> Void) {
+    @discardableResult
+    func register(id: UInt32, keyCode: UInt32, carbonModifiers: UInt32, onFire: @escaping () -> Void) -> Bool {
         if let r = refs[id] { UnregisterEventHotKey(r); refs[id] = nil }
         var ref: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: OSType(0x4C534D4B), id: id) // 'LSMK'
@@ -38,7 +39,10 @@ final class HotkeyManager {
         if status == noErr, let ref {
             refs[id] = ref
             callbacks[id] = onFire
+            return true
         }
+        callbacks[id] = nil
+        return false
     }
 
     func unregisterAll() {

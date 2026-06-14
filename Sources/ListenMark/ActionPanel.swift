@@ -44,7 +44,7 @@ final class ActionPanel: NSPanel {
         case .idle: return barHeight
         case .loading: return barHeight + 48
         case .error: return barHeight + 56
-        case .result(_, _, _, _, _, let compact):
+        case .result(_, _, _, _, _, let compact, _):
             return compact ? barHeight + 66 : barHeight + 158
         }
     }
@@ -59,14 +59,14 @@ final class ActionPanel: NSPanel {
         setFrame(f, display: true, animate: true)
     }
 
-    /// Toolbar width measured from the enabled skills' labels, so nothing gets
-    /// squeezed/truncated regardless of how many skills are on.
+    /// Toolbar width measured from the visible skills' labels. Extra enabled
+    /// skills stay in the overflow menu, so the panel does not keep growing.
     private func computeWidth() -> CGFloat {
         let font = NSFont.systemFont(ofSize: 12)
         let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         var w: CGFloat = 16 + 14   // toolbar h-padding (8+8) + grip
         var childCount = 1
-        for def in ActionStore.shared.enabled {
+        for def in ActionStore.shared.enabled.prefix(ActionPanelLayout.visibleActionLimit) {
             let labelW = (def.name as NSString).size(withAttributes: [.font: font]).width
             let measuredIconW = NSImage(systemSymbolName: def.icon, accessibilityDescription: nil)?
                 .withSymbolConfiguration(cfg)?.size.width ?? 14
@@ -75,8 +75,8 @@ final class ActionPanel: NSPanel {
             w += 16 + iconW + 5 + ceil(labelW)
             childCount += 1
         }
-        w += 5 + 26 + 22   // divider + ··· menu + × close
-        childCount += 3
+        w += 5 + 26 + 26 + 22   // divider + copy + ··· menu + × close
+        childCount += 4
         w += CGFloat(max(childCount - 1, 0)) * 2
         return max(minPanelWidth, ceil(w))
     }

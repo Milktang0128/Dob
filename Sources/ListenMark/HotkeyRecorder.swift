@@ -7,22 +7,78 @@ struct HotkeyRecorder: NSViewRepresentable {
     @Binding var display: String
     var onRecord: (UInt16, NSEvent.ModifierFlags, String) -> Void
 
-    func makeNSView(context: Context) -> RecorderButton {
-        let b = RecorderButton()
-        b.onRecord = onRecord
-        b.title = display
-        return b
+    func makeNSView(context: Context) -> RecorderContainer {
+        let view = RecorderContainer()
+        view.recorder.onRecord = onRecord
+        view.recorder.onRecordingChanged = { [weak view] recording in
+            view?.setRecording(recording)
+        }
+        view.recorder.title = display
+        return view
     }
 
-    func updateNSView(_ nsView: RecorderButton, context: Context) {
-        if !nsView.recording { nsView.title = display }
+    func updateNSView(_ nsView: RecorderContainer, context: Context) {
+        nsView.recorder.onRecord = onRecord
+        if !nsView.recorder.recording { nsView.recorder.title = display }
+    }
+}
+
+final class RecorderContainer: NSView {
+    let recorder = RecorderButton()
+    private let cancelButton = NSButton()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        recorder.translatesAutoresizingMaskIntoConstraints = false
+        cancelButton.translatesAutoresizingMaskIntoConstraints = false
+        cancelButton.bezelStyle = .circular
+        cancelButton.setButtonType(.momentaryPushIn)
+        cancelButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "取消录制")
+        cancelButton.imageScaling = .scaleProportionallyDown
+        cancelButton.isBordered = false
+        cancelButton.contentTintColor = .tertiaryLabelColor
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelRecording)
+        cancelButton.toolTip = "取消录制"
+        cancelButton.isHidden = true
+
+        addSubview(recorder)
+        addSubview(cancelButton)
+
+        NSLayoutConstraint.activate([
+            recorder.leadingAnchor.constraint(equalTo: leadingAnchor),
+            recorder.topAnchor.constraint(equalTo: topAnchor),
+            recorder.bottomAnchor.constraint(equalTo: bottomAnchor),
+            cancelButton.leadingAnchor.constraint(equalTo: recorder.trailingAnchor, constant: 6),
+            cancelButton.centerYAnchor.constraint(equalTo: recorder.centerYAnchor),
+            cancelButton.widthAnchor.constraint(equalToConstant: 18),
+            cancelButton.heightAnchor.constraint(equalToConstant: 18),
+            cancelButton.trailingAnchor.constraint(equalTo: trailingAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: recorder.intrinsicContentSize.width + 24, height: recorder.intrinsicContentSize.height)
+    }
+
+    func setRecording(_ recording: Bool) {
+        cancelButton.isHidden = !recording
+        invalidateIntrinsicContentSize()
+    }
+
+    @objc private func cancelRecording() {
+        recorder.cancelRecording()
     }
 }
 
 final class RecorderButton: NSButton {
     var onRecord: ((UInt16, NSEvent.ModifierFlags, String) -> Void)?
+    var onRecordingChanged: ((Bool) -> Void)?
     var recording = false
     private var monitor: Any?
+    private var previousTitle = ""
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -35,8 +91,11 @@ final class RecorderButton: NSButton {
     deinit { stop() }
 
     @objc private func begin() {
+        guard !recording else { return }
+        previousTitle = title
         recording = true
         title = "按下新快捷键…"
+        onRecordingChanged?(true)
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             self?.capture(e)
             return nil
@@ -45,7 +104,7 @@ final class RecorderButton: NSButton {
 
     private func capture(_ e: NSEvent) {
         if e.keyCode == 53 {
-            stop()
+            cancelRecording()
             return
         }
         let mods = e.modifierFlags.intersection([.command, .option, .control, .shift])
@@ -58,9 +117,15 @@ final class RecorderButton: NSButton {
         onRecord?(e.keyCode, mods, disp)
     }
 
+    func cancelRecording() {
+        title = previousTitle
+        stop()
+    }
+
     private func stop() {
         recording = false
         if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+        onRecordingChanged?(false)
     }
 
     static func symbols(_ m: NSEvent.ModifierFlags) -> String {

@@ -7,6 +7,7 @@ func actionTint(_ name: String) -> Color {
     case "翻译": return .green
     case "提炼": return .purple
     case "背景": return .pink
+    case "摘录": return .gray
     default: return .teal
     }
 }
@@ -32,7 +33,8 @@ struct ArchiveView: View {
         guard !q.isEmpty else { return base }
         return base.filter {
             $0.original.localizedCaseInsensitiveContains(q) ||
-            ($0.response ?? "").localizedCaseInsensitiveContains(q)
+            ($0.response ?? "").localizedCaseInsensitiveContains(q) ||
+            ($0.contextExcerpt ?? "").localizedCaseInsensitiveContains(q)
         }
     }
 
@@ -110,6 +112,7 @@ private struct EntryCard: View {
     let entry: Entry
     @ObservedObject private var store = ArchiveStore.shared
     @State private var hover = false
+    @State private var showContext = false
 
     private static let df: DateFormatter = {
         let f = DateFormatter()
@@ -129,6 +132,15 @@ private struct EntryCard: View {
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Capsule().fill(tint.opacity(0.14)))
 
+                if entry.contextUsed == true {
+                    Label("已附带上下文", systemImage: "doc.text.magnifyingglass")
+                        .font(.system(size: 10, weight: .medium))
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(Color.primary.opacity(0.07)))
+                }
+
                 Text(entry.sourceApp).font(.system(size: 11)).foregroundStyle(.secondary)
                 Text(Self.df.string(from: entry.date)).font(.system(size: 11)).foregroundStyle(.tertiary)
                 Spacer()
@@ -147,6 +159,19 @@ private struct EntryCard: View {
 
             if let r = entry.response, !r.isEmpty {
                 Text(r).font(.system(size: 13)).lineLimit(8).textSelection(.enabled)
+            }
+
+            if let context = entry.contextExcerpt, !context.isEmpty {
+                DisclosureGroup("上下文摘录", isExpanded: $showContext) {
+                    Text(context)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+                }
+                .font(.system(size: 12, weight: .medium))
             }
         }
         .padding(13)

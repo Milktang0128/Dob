@@ -40,6 +40,8 @@ struct Entry: Identifiable, Codable {
     var sourceApp: String
     var original: String
     var response: String?
+    var contextUsed: Bool?
+    var contextExcerpt: String?
     // Spaced-repetition state (optional → back-compatible with old archives).
     var reviewCount: Int?
     var lastReviewed: Date?

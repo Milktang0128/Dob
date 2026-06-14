@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Carbon.HIToolbox
 
 /// Thin UserDefaults wrapper. Shared with the SwiftUI settings view via
 /// matching @AppStorage keys.
@@ -19,6 +20,11 @@ enum Settings {
             return m.isEmpty ? "deepseek-v4-flash" : m
         }
         set { d.set(newValue, forKey: "deepseekModel") }
+    }
+
+    static var useFullContext: Bool {
+        get { d.object(forKey: "useFullContext") == nil ? true : d.bool(forKey: "useFullContext") }
+        set { d.set(newValue, forKey: "useFullContext") }
     }
 
     // MARK: Speech engine
@@ -113,9 +119,28 @@ enum Settings {
         }
         set { d.set(newValue, forKey: "hkDisplay") }
     }
+
+    static var ocrHotKeyCode: Int {
+        get { d.object(forKey: "ocrHkCode") == nil ? Int(kVK_ANSI_O) : d.integer(forKey: "ocrHkCode") }
+        set { d.set(newValue, forKey: "ocrHkCode") }
+    }
+
+    static var ocrHotKeyMods: Int {
+        get { d.object(forKey: "ocrHkMods") == nil ? (controlKey | shiftKey) : d.integer(forKey: "ocrHkMods") }
+        set { d.set(newValue, forKey: "ocrHkMods") }
+    }
+
+    static var ocrHotKeyDisplay: String {
+        get {
+            let s = d.string(forKey: "ocrHkDisplay") ?? ""
+            return s.isEmpty ? "⌃⇧O" : s
+        }
+        set { d.set(newValue, forKey: "ocrHkDisplay") }
+    }
 }
 
 /// Posted whenever the trigger config (hotkey / auto-pop) changes.
 extension Notification.Name {
     static let gebwConfigChanged = Notification.Name("GEBWConfigChanged")
+    static let gebwOpenActions = Notification.Name("GEBWOpenActions")
 }

@@ -17,12 +17,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private weak var reviewMenuItem: NSMenuItem?
 
     private var currentText = ""
+    private var currentContext = ""
+    private var currentContextSource: SelectionGrabber.ContextSource?
     private var currentSource = ""
     private var currentResult = ""
     private var currentAction: ActionDef?
+    private var currentContextUsed = false
     private var pendingEntry: Entry?
     private var lastAutoText = ""
     private var streamTask: Task<Void, Never>?
+    private var actionGeneration = 0
     private var enabledPIDs = Set<pid_t>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -34,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyConfig()
         NotificationCenter.default.addObserver(self, selector: #selector(applyConfig),
                                                name: .gebwConfigChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(openActions),
+                                               name: .gebwOpenActions, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(appActivated(_:)),
                                                           name: NSWorkspace.didActivateApplicationNotification, object: nil)
         if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { enableAX(pid) }
@@ -60,25 +66,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.onPick = { [weak self] def in self?.perform(def) }
         m.onReplay = { [weak self] in
             guard let self else { return }
-            Speaker.shared.speak(self.currentResult.isEmpty ? self.currentText : self.currentResult)
+            Speaker.shared.replay(self.currentResult.isEmpty ? self.currentText : self.currentResult)
         }
         m.onStop = { [weak self] in
             Speaker.shared.stop()
             self?.streamTask?.cancel()
         }
         m.onArchive = { [weak self] in
-            guard let self, let entry = self.pendingEntry else { return }
-            ArchiveStore.shared.add(entry)
-            self.pendingEntry = nil
-            if let a = self.currentAction {
-                self.panel.model.phase = .result(action: a.name, icon: a.icon, text: self.currentResult,
-                                                 replay: true, archived: true, compact: !a.needsLLM)
-            }
+            self?.archivePendingEntry(updatePanel: true)
+        }
+        m.onArchiveOriginal = { [weak self] in
+            self?.archiveOriginalCopy()
         }
         m.onCopyOriginal = { [weak self] in
-            guard let self, !self.currentText.isEmpty else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(self.currentText, forType: .string)
+            guard let self, !self.currentText.isEmpty else { return false }
+            self.copyToPasteboard(self.currentText)
+            return true
+        }
+        m.onCopyResult = { [weak self] text in
+            guard let self, !text.isEmpty else { return false }
+            self.copyToPasteboard(text)
+            return true
         }
         m.onClose = { [weak self] in self?.closePanel() }
         m.onOpenArchive = { [weak self] in self?.openArchive() }
@@ -117,10 +125,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func applyConfig() {
         HotkeyManager.shared.unregisterAll()
-        HotkeyManager.shared.register(id: 1,
-                                      keyCode: UInt32(Settings.hotKeyCode),
-                                      carbonModifiers: UInt32(Settings.hotKeyMods)) { [weak self] in
+        if !HotkeyManager.shared.register(id: 1,
+                                          keyCode: UInt32(Settings.hotKeyCode),
+                                          carbonModifiers: UInt32(Settings.hotKeyMods),
+                                          onFire: { [weak self] in
             self?.triggerCapture()
+        }) {
+            NSLog("ListenMark · 弹出面板快捷键注册失败：\(Settings.hotKeyDisplay)")
+        }
+        if !HotkeyManager.shared.register(id: 2,
+                                          keyCode: UInt32(Settings.ocrHotKeyCode),
+                                          carbonModifiers: UInt32(Settings.ocrHotKeyMods),
+                                          onFire: { [weak self] in
+            self?.triggerScreenOCR()
+        }) {
+            NSLog("ListenMark · 屏幕 OCR 快捷键注册失败：\(Settings.ocrHotKeyDisplay)")
         }
         registerActionHotKeys()
         triggerMenuItem?.title = "处理选中文本  \(Settings.hotKeyDisplay)"
@@ -138,10 +157,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard action.enabled,
                   let keyCode = action.hotKeyCode,
                   let mods = action.hotKeyMods else { continue }
-            HotkeyManager.shared.register(id: UInt32(1_000 + index),
-                                          keyCode: UInt32(keyCode),
-                                          carbonModifiers: UInt32(mods)) { [weak self] in
+            if !HotkeyManager.shared.register(id: UInt32(1_000 + index),
+                                              keyCode: UInt32(keyCode),
+                                              carbonModifiers: UInt32(mods),
+                                              onFire: { [weak self] in
                 self?.triggerAction(action.id)
+            }) {
+                NSLog("ListenMark · 技能快捷键注册失败：\(action.name) \(action.hotKeyDisplay ?? "")")
             }
         }
     }
@@ -149,11 +171,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func handleSelectionMouseUp() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
             guard let self else { return }
-            guard let text = SelectionGrabber.axSelectedText() else { self.lastAutoText = ""; return }
+            guard !self.panel.isVisible else { return }
+            let contextSource = SelectionGrabber.contextSource()
+            guard let text = SelectionGrabber.axSelectedText() else {
+                self.lastAutoText = ""
+                self.currentContext = ""
+                self.currentContextSource = nil
+                self.currentContextUsed = false
+                return
+            }
             guard text != self.lastAutoText else { return }
+            self.cancelActiveAction()
             self.lastAutoText = text
             self.currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? "未知来源"
             self.currentText = text
+            self.currentContext = ""
+            self.currentContextSource = contextSource
+            self.currentContextUsed = false
             self.currentResult = ""
             self.pendingEntry = nil
             self.showPanel()
@@ -215,12 +249,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         triggerSelection(actionID: actionID)
     }
 
+    private func triggerScreenOCR() {
+        cancelActiveAction()
+        let generation = actionGeneration
+        currentSource = "屏幕 OCR"
+        ScreenOCR.shared.start { [weak self] text in
+            guard let self else { return }
+            guard self.actionGeneration == generation else { return }
+            let clean = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !clean.isEmpty else {
+                self.currentText = ""
+                self.currentContext = ""
+                self.currentContextSource = nil
+                self.currentContextUsed = false
+                self.currentResult = ""
+                self.pendingEntry = nil
+                self.showPanel()
+                self.panel.model.phase = .error("没有识别到文字——可能需要屏幕录制权限，或框选区域没有清晰文字")
+                return
+            }
+
+            self.currentText = clean
+            self.currentContext = ""
+            self.currentContextSource = nil
+            self.currentContextUsed = false
+            self.currentResult = ""
+            self.pendingEntry = nil
+            self.lastAutoText = clean
+            self.showPanel()
+        }
+    }
+
     private func triggerSelection(actionID: String?) {
+        cancelActiveAction()
+        let generation = actionGeneration
         currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? "未知来源"
+        let contextSource = SelectionGrabber.contextSource()
         SelectionGrabber.grabAsync { [weak self] text in
             guard let self else { return }
+            guard self.actionGeneration == generation else { return }
             guard let text, !text.isEmpty else {
                 self.currentText = ""
+                self.currentContext = ""
+                self.currentContextSource = nil
+                self.currentContextUsed = false
                 self.showPanel()
                 if SelectionGrabber.isTrusted {
                     self.panel.model.phase = .error("没取到选中文本——先选中文字再触发")
@@ -230,6 +302,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
             self.currentText = text
+            self.currentContext = ""
+            self.currentContextSource = contextSource
+            self.currentContextUsed = false
             self.lastAutoText = text
             self.currentResult = ""
             self.pendingEntry = nil
@@ -260,7 +335,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func closePanel() {
         removeOutsideMonitor()
+        cancelActiveAction()
         panel.orderOut(nil)
+    }
+
+    private func cancelActiveAction() {
+        actionGeneration += 1
+        streamTask?.cancel()
+        streamTask = nil
+        Speaker.shared.stop()
     }
 
     // MARK: - Run an action
@@ -268,6 +351,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func perform(_ action: ActionDef) {
         let text = currentText
         guard !text.isEmpty else { return }
+        cancelActiveAction()
+        let generation = actionGeneration
         panel.model.active = action.id
 
         if action.needsLLM && Settings.deepseekKey.isEmpty {
@@ -276,58 +361,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         if !action.needsLLM {
+            currentContextUsed = false
             Speaker.shared.speak(text)
-            finishResult(action: action, source: currentSource, original: text, response: nil, spoken: text)
+            finishResult(action: action, source: currentSource, original: text, response: nil,
+                         spoken: text, contextUsed: false)
             return
         }
 
         panel.model.phase = .loading(action.name)
         let source = currentSource
-        streamTask?.cancel()
         streamTask = Task { [weak self] in
+            guard let self else { return }
+            let context = self.contextText(for: text)
+            let request = self.requestPayload(for: action, selectedText: text, context: context)
+            let shouldContinue = await MainActor.run {
+                guard self.actionGeneration == generation else { return false }
+                self.currentContext = context
+                self.currentContextUsed = request.contextUsed
+                return true
+            }
+            guard shouldContinue, !Task.isCancelled else { return }
+
             var full = ""
             do {
-                for try await delta in LLMClient.stream(prompt: action.prompt, text: text) {
+                for try await delta in LLMClient.stream(prompt: request.prompt, text: request.text) {
                     full += delta
                     let snapshot = full
-                    guard let self else { return }
                     await MainActor.run {
+                        guard self.actionGeneration == generation else { return }
                         // Text streams to the UI; speech waits for the full block so it
                         // reads as one coherent passage instead of choppy sentences.
                         self.panel.model.phase = .result(action: action.name, icon: action.icon,
-                                                         text: snapshot, replay: false, archived: false, compact: false)
+                                                         text: snapshot, replay: false, archived: false,
+                                                         compact: false, contextUsed: request.contextUsed)
                     }
                 }
-                guard let self else { return }
                 let finalText = full
                 await MainActor.run {
+                    guard self.actionGeneration == generation else { return }
                     Speaker.shared.speak(finalText)
-                    self.finishResult(action: action, source: source, original: text, response: finalText, spoken: finalText)
+                    self.finishResult(action: action, source: source, original: text, response: finalText,
+                                      spoken: finalText, contextUsed: request.contextUsed)
                 }
             } catch is CancellationError {
-                guard let self else { return }
                 let finalText = full
                 await MainActor.run {
+                    guard self.actionGeneration == generation else { return }
                     if finalText.isEmpty {
                         self.panel.model.phase = .idle
                     } else {
                         // User stopped mid-stream: keep the partial text, don't speak.
-                        self.finishResult(action: action, source: source, original: text, response: finalText, spoken: finalText)
+                        self.finishResult(action: action, source: source, original: text, response: finalText,
+                                          spoken: finalText, contextUsed: request.contextUsed)
                     }
                 }
             } catch {
-                guard let self else { return }
                 await MainActor.run {
+                    guard self.actionGeneration == generation else { return }
                     self.panel.model.phase = .error("出错：\(Self.describe(error))")
                 }
             }
         }
     }
 
-    private func finishResult(action: ActionDef, source: String, original: String, response: String?, spoken: String) {
+    private func finishResult(action: ActionDef, source: String, original: String, response: String?,
+                              spoken: String, contextUsed: Bool) {
         currentResult = spoken
         currentAction = action
-        let entry = Entry(action: action.name, icon: action.icon, sourceApp: source, original: original, response: response)
+        currentContextUsed = contextUsed
+        let entry = Entry(action: action.name, icon: action.icon, sourceApp: source,
+                          original: original, response: response, contextUsed: contextUsed,
+                          contextExcerpt: contextUsed ? contextExcerpt(from: currentContext, selectedText: original) : nil)
         let auto = Settings.autoArchive
         if auto {
             ArchiveStore.shared.add(entry)
@@ -336,7 +440,100 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             pendingEntry = entry
         }
         panel.model.phase = .result(action: action.name, icon: action.icon, text: spoken,
-                                    replay: true, archived: auto, compact: !action.needsLLM)
+                                    replay: true, archived: auto, compact: !action.needsLLM,
+                                    contextUsed: contextUsed)
+    }
+
+    private func requestPayload(for action: ActionDef, selectedText: String, context: String) -> (prompt: String, text: String, contextUsed: Bool) {
+        guard Settings.useFullContext else { return (action.prompt, selectedText, false) }
+
+        let cleanContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanContext.isEmpty, cleanContext != selectedText else { return (action.prompt, selectedText, false) }
+
+        let prompt = action.prompt + "\n\n如果用户同时提供「全文上下文」，请只把它当作理解选中内容的上下文；回答仍然围绕「选中内容」执行当前技能，不要改为概括整篇全文，除非当前技能明确要求概括。"
+        let text = """
+        选中内容：
+        \(selectedText)
+
+        全文上下文：
+        \(cleanContext)
+        """
+        return (prompt, text, true)
+    }
+
+    private func contextText(for selectedText: String) -> String {
+        guard Settings.useFullContext else { return "" }
+        return SelectionGrabber.axContextText(for: selectedText, source: currentContextSource) ?? ""
+    }
+
+    private func contextExcerpt(from context: String, selectedText: String, radius: Int = 200) -> String? {
+        let cleanContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanContext.isEmpty, !selected.isEmpty else { return nil }
+
+        let markerStart = "【选中内容开始】"
+        let markerEnd = "【选中内容结束】"
+        guard let range = cleanContext.range(of: selected, options: [.caseInsensitive, .diacriticInsensitive])
+                ?? compactRange(of: selected, in: cleanContext) else { return nil }
+
+        let start = cleanContext.index(range.lowerBound, offsetBy: -radius, limitedBy: cleanContext.startIndex) ?? cleanContext.startIndex
+        let end = cleanContext.index(range.upperBound, offsetBy: radius, limitedBy: cleanContext.endIndex) ?? cleanContext.endIndex
+        let before = cleanContext[start..<range.lowerBound]
+        let match = cleanContext[range]
+        let after = cleanContext[range.upperBound..<end]
+        return "\(before)\(markerStart)\(match)\(markerEnd)\(after)"
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func compactRange(of selected: String, in context: String) -> Range<String.Index>? {
+        let selectedCompact = compactForContextMatch(selected)
+        guard selectedCompact.count >= 6 else { return nil }
+
+        var compact = ""
+        var indexMap: [String.Index] = []
+        for index in context.indices {
+            let character = context[index]
+            guard !String(character).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            compact.append(contentsOf: String(character).lowercased())
+            indexMap.append(index)
+        }
+
+        guard let compactRange = compact.range(of: selectedCompact) else { return nil }
+        let lowerOffset = compact.distance(from: compact.startIndex, to: compactRange.lowerBound)
+        let upperOffset = compact.distance(from: compact.startIndex, to: compactRange.upperBound) - 1
+        guard indexMap.indices.contains(lowerOffset), indexMap.indices.contains(upperOffset) else { return nil }
+
+        let lower = indexMap[lowerOffset]
+        let upper = context.index(after: indexMap[upperOffset])
+        return lower..<upper
+    }
+
+    private func compactForContextMatch(_ text: String) -> String {
+        let scalars = text.lowercased().unicodeScalars.filter {
+            !CharacterSet.whitespacesAndNewlines.contains($0)
+        }
+        return String(String.UnicodeScalarView(scalars))
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func archiveOriginalCopy() {
+        let entry = Entry(action: "摘录", icon: "doc.on.doc", sourceApp: currentSource,
+                          original: currentText, response: nil)
+        ArchiveStore.shared.add(entry)
+    }
+
+    private func archivePendingEntry(updatePanel: Bool) {
+        guard let entry = pendingEntry else { return }
+        ArchiveStore.shared.add(entry)
+        pendingEntry = nil
+        guard updatePanel, let action = currentAction else { return }
+        panel.model.phase = .result(action: action.name, icon: action.icon, text: currentResult,
+                                    replay: true, archived: true, compact: !action.needsLLM,
+                                    contextUsed: currentContextUsed)
     }
 
     private static func describe(_ error: Error) -> String {

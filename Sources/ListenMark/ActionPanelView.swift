@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum ActionPanelLayout {
+    static let visibleActionLimit = 5
+}
+
 /// Drives the floating panel. The toolbar is data-driven from ActionStore;
 /// the row is a fixed slim height and never grows — results appear in a capped
 /// card below it (and 朗读 stays compact).
@@ -7,7 +11,8 @@ final class PanelModel: ObservableObject {
     enum Phase: Equatable {
         case idle
         case loading(String)                                                              // action name
-        case result(action: String, icon: String, text: String, replay: Bool, archived: Bool, compact: Bool)
+        case result(action: String, icon: String, text: String, replay: Bool,
+                    archived: Bool, compact: Bool, contextUsed: Bool)
         case error(String)
     }
 
@@ -19,7 +24,9 @@ final class PanelModel: ObservableObject {
     var onReplay: (() -> Void)?
     var onStop: (() -> Void)?
     var onArchive: (() -> Void)?
-    var onCopyOriginal: (() -> Void)?
+    var onArchiveOriginal: (() -> Void)?
+    var onCopyOriginal: (() -> Bool)?
+    var onCopyResult: ((String) -> Bool)?
     var onClose: (() -> Void)?
     var onOpenArchive: (() -> Void)?
     var onOpenSettings: (() -> Void)?
@@ -30,6 +37,12 @@ final class PanelModel: ObservableObject {
 struct ActionPanelView: View {
     @ObservedObject var model: PanelModel
     @ObservedObject private var store = ActionStore.shared
+    @State private var showOriginalCopyBubble = false
+    @State private var showResultCopyBubble = false
+    @State private var originalCopyArchived = false
+    @State private var resultCopyArchived = false
+    @State private var originalCopyToken = UUID()
+    @State private var resultCopyToken = UUID()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -56,13 +69,45 @@ struct ActionPanelView: View {
     private var toolbar: some View {
         HStack(spacing: 2) {
             GripView()
-            ForEach(store.enabled) { def in
+            ForEach(visibleActions) { def in
                 ActionItem(def: def, active: model.active == def.id) { model.onPick?(def) }
             }
             Divider().frame(height: 18).padding(.horizontal, 2)
+            Button {
+                if model.onCopyOriginal?() == true {
+                    presentOriginalCopyBubble()
+                }
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 34)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("复制原文")
+            .popover(isPresented: $showOriginalCopyBubble, arrowEdge: .bottom) {
+                CopyArchiveBubble(archived: originalCopyArchived) {
+                    model.onArchiveOriginal?()
+                    originalCopyArchived = true
+                    dismissOriginalCopyBubble(after: 0.65)
+                }
+            }
+
             Menu {
-                Button("复制原文") { model.onCopyOriginal?() }
-                Divider()
+                if !overflowActions.isEmpty {
+                    Section("更多技能") {
+                        ForEach(overflowActions) { def in
+                            Button {
+                                model.onPick?(def)
+                            } label: {
+                                Label(def.name, systemImage: def.icon)
+                            }
+                        }
+                    }
+                    Divider()
+                }
                 Button("今日回响…") { model.onOpenReview?() }
                 Button("编辑技能…") { model.onOpenActions?() }
                 Button("打开档案…") { model.onOpenArchive?() }
@@ -92,6 +137,14 @@ struct ActionPanelView: View {
         .frame(height: 40)
     }
 
+    private var visibleActions: [ActionDef] {
+        Array(store.enabled.prefix(ActionPanelLayout.visibleActionLimit))
+    }
+
+    private var overflowActions: [ActionDef] {
+        Array(store.enabled.dropFirst(ActionPanelLayout.visibleActionLimit))
+    }
+
     // MARK: Result card
 
     @ViewBuilder private var resultArea: some View {
@@ -107,13 +160,26 @@ struct ActionPanelView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 13)
 
-        case .result(let action, let icon, let text, let replay, let archived, let compact):
+        case .result(let action, let icon, let text, let replay, let archived, let compact, let contextUsed):
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 6) {
                     Image(systemName: archived ? "checkmark.seal.fill" : icon)
                         .font(.system(size: 11))
                         .foregroundStyle(archived ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
-                    Text(action).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(action)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if contextUsed {
+                        Label("已附带上下文", systemImage: "doc.text.magnifyingglass")
+                            .font(.system(size: 10, weight: .medium))
+                            .labelStyle(.titleAndIcon)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    }
                     Spacer()
                     if archived {
                         Text("已留档").font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -158,10 +224,22 @@ struct ActionPanelView: View {
             Button { model.onStop?() } label: { Label("停止", systemImage: "stop.fill") }
                 .buttonStyle(.bordered)
             Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-            } label: { Image(systemName: "doc.on.doc") }
-                .buttonStyle(.bordered).help("复制结果")
+                if model.onCopyResult?(text) == true {
+                    presentResultCopyBubble()
+                }
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .help("复制结果")
+            .popover(isPresented: $showResultCopyBubble, arrowEdge: .bottom) {
+                CopyArchiveBubble(archived: archived || resultCopyArchived,
+                                  canArchive: replay && !archived && !resultCopyArchived) {
+                    model.onArchive?()
+                    resultCopyArchived = true
+                    dismissResultCopyBubble(after: 0.65)
+                }
+            }
             if replay && !archived {
                 Button { model.onArchive?() } label: { Label("留档", systemImage: "tray.and.arrow.down.fill") }
                     .buttonStyle(.bordered).tint(.accentColor)
@@ -173,9 +251,72 @@ struct ActionPanelView: View {
         .controlSize(.small)
         .buttonBorderShape(.capsule)
     }
+
+    private func presentOriginalCopyBubble() {
+        originalCopyArchived = false
+        showOriginalCopyBubble = true
+        dismissOriginalCopyBubble(after: 3)
+    }
+
+    private func presentResultCopyBubble() {
+        resultCopyArchived = false
+        showResultCopyBubble = true
+        dismissResultCopyBubble(after: 3)
+    }
+
+    private func dismissOriginalCopyBubble(after delay: TimeInterval) {
+        let token = UUID()
+        originalCopyToken = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            if originalCopyToken == token {
+                showOriginalCopyBubble = false
+            }
+        }
+    }
+
+    private func dismissResultCopyBubble(after delay: TimeInterval) {
+        let token = UUID()
+        resultCopyToken = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            if resultCopyToken == token {
+                showResultCopyBubble = false
+            }
+        }
+    }
 }
 
 // MARK: - Pieces
+
+private struct CopyArchiveBubble: View {
+    let archived: Bool
+    var canArchive = true
+    let onArchive: () -> Void
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Label("已复制", systemImage: "checkmark.circle.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            if archived {
+                Text("已留档")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+            } else if canArchive {
+                Divider().frame(height: 18)
+                Button {
+                    onArchive()
+                } label: {
+                    Label("留档", systemImage: "tray.and.arrow.down.fill")
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 12, weight: .semibold))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .fixedSize()
+    }
+}
 
 private struct ActionItem: View {
     let def: ActionDef

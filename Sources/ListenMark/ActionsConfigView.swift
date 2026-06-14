@@ -25,7 +25,7 @@ struct ActionsConfigView: View {
                                                              store: store))
                 }
             } header: {
-                Text("朗读固定第一；拖动左侧把手调整其它技能；快捷键会直接处理当前选中文本")
+                Text("朗读固定第一；拖动左侧把手调整其它技能；浮窗显示前 5 个启用技能，其余收在更多菜单")
             }
 
             Section {
@@ -42,7 +42,7 @@ struct ActionsConfigView: View {
 
                 Button("恢复默认技能", role: .destructive) { store.resetToDefaults() }
             } footer: {
-                Text("自定义技能会调用大模型，按你的提示词生成内容并念出来——比如「拆解这句话的句法结构」「找出生词并解释」。")
+                Text("技能快捷键会直接处理当前选中文本。自定义技能会调用大模型，按你的提示词生成内容并念出来。")
             }
         }
         .listStyle(.inset)
@@ -78,7 +78,7 @@ struct ActionsConfigView: View {
             HotkeyRecorder(display: Binding(get: { def.hotKeyDisplay ?? "未设置" }, set: { _ in })) { code, mods, disp in
                 store.setHotKey(def.id, code: Int(code), mods: carbonModifiers(mods), display: disp)
             }
-            .frame(width: 96, height: 22)
+            .frame(width: 122, height: 22)
             .help("设置此技能的全局快捷键")
             if def.hotKeyDisplay != nil {
                 Button {
@@ -143,6 +143,8 @@ private struct ActionDropDelegate: DropDelegate {
 
 private struct ActionEditor: View {
     @State var target: ActionsConfigView.EditTarget
+    @State private var optimizingPrompt = false
+    @State private var optimizeError: String?
     var onSave: (ActionDef) -> Void
     var onCancel: () -> Void
 
@@ -185,7 +187,7 @@ private struct ActionEditor: View {
                     target.def.hotKeyMods = carbonModifiers(mods)
                     target.def.hotKeyDisplay = disp
                 }
-                .frame(width: 120, height: 24)
+                .frame(width: 146, height: 24)
                 if target.def.hotKeyDisplay != nil {
                     Button("清除") {
                         target.def.hotKeyCode = nil
@@ -197,7 +199,23 @@ private struct ActionEditor: View {
 
             if target.def.needsLLM {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("生成提示词（告诉模型怎么处理选中的文本）").font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text("生成提示词（告诉模型怎么处理选中的文本）")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            Task { await optimizePrompt() }
+                        } label: {
+                            if optimizingPrompt {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("AI 优化", systemImage: "wand.and.stars")
+                            }
+                        }
+                        .controlSize(.small)
+                        .disabled(optimizingPrompt || target.def.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .help("用当前 DeepSeek 模型优化这个技能提示词")
+                    }
                     TextEditor(text: $target.def.prompt)
                         .font(.system(size: 12))
                         .frame(height: 130)
@@ -216,11 +234,80 @@ private struct ActionEditor: View {
         }
         .padding(20)
         .frame(width: 440)
+        .alert("AI 优化失败", isPresented: Binding(get: { optimizeError != nil },
+                                              set: { if !$0 { optimizeError = nil } })) {
+            Button("好") { optimizeError = nil }
+        } message: {
+            Text(optimizeError ?? "")
+        }
     }
 
     private func finalDef() -> ActionDef {
         var d = target.def
         d.name = d.name.trimmingCharacters(in: .whitespaces)
         return d
+    }
+
+    @MainActor
+    private func optimizePrompt() async {
+        let name = target.def.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let current = target.def.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !current.isEmpty else { return }
+        guard !Settings.deepseekKey.isEmpty else {
+            optimizeError = "请先在设置里填写 DeepSeek API Key。"
+            return
+        }
+
+        optimizingPrompt = true
+        defer { optimizingPrompt = false }
+
+        do {
+            let optimized = try await LLMClient.complete(prompt: Self.promptOptimizerSystemPrompt,
+                                                        text: """
+                                                        技能名称：\(name.isEmpty ? "未命名技能" : name)
+
+                                                        当前提示词：
+                                                        \(current)
+                                                        """)
+            let cleaned = cleanOptimizedPrompt(optimized)
+            guard !cleaned.isEmpty else {
+                optimizeError = "模型没有返回可用的提示词。"
+                return
+            }
+            target.def.prompt = cleaned
+        } catch {
+            optimizeError = Self.describe(error)
+        }
+    }
+
+    private func cleanOptimizedPrompt(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "`"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let promptOptimizerSystemPrompt = """
+    你是「过耳不忘」的技能提示词优化器。你的任务是把用户现有的技能提示词改写得更清晰、稳定、适合处理被选中的文本。
+
+    优化原则：
+    保留原意，不新增用户没有要求的任务。
+    明确模型应该如何处理「选中内容」。
+    如果任务可能使用全文上下文，要说明全文上下文只作为理解选中内容的参考，除非任务本身要求概括全文。
+    输出应适合后续语音朗读：要求模型返回自然口语化纯文本，不要 Markdown、表格、列表符号或多余客套。
+    提示词要简洁但足够明确，通常一段话即可。
+
+    只输出优化后的提示词本身，不要解释，不要加标题。
+    """
+
+    private static func describe(_ error: Error) -> String {
+        if let e = error as? LLMError {
+            switch e {
+            case .noKey: return "请先在设置里填写 DeepSeek API Key。"
+            case .http(let code, let msg): return "DeepSeek 请求失败：HTTP \(code) \(msg.prefix(120))"
+            case .badResponse: return "DeepSeek 响应解析失败。"
+            }
+        }
+        return error.localizedDescription
     }
 }

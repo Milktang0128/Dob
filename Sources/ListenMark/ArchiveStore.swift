@@ -105,8 +105,16 @@ final class ArchiveStore: ObservableObject {
         var md = "# 过耳不忘 · 档案\n\n"
         for e in entries {
             md += "## \(e.action) · \(df.string(from: e.date)) · \(e.sourceApp)\n\n"
+            if e.contextUsed == true {
+                md += "_已附带上下文_\n\n"
+            }
             md += "> \(e.original.replacingOccurrences(of: "\n", with: "\n> "))\n\n"
             if let r = e.response, !r.isEmpty { md += "\(r)\n\n" }
+            if let context = e.contextExcerpt, !context.isEmpty {
+                md += "<details>\n<summary>上下文摘录</summary>\n\n"
+                md += "```text\n\(context)\n```\n\n"
+                md += "</details>\n\n"
+            }
             md += "---\n\n"
         }
         let url = markdownURL
