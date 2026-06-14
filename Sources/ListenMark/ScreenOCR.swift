@@ -61,7 +61,7 @@ final class ScreenOCR {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
-        request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+        request.recognitionLanguages = AppFlavor.isInternational ? ["en-US", "zh-Hans", "zh-Hant"] : ["zh-Hans", "zh-Hant", "en-US"]
 
         let handler = VNImageRequestHandler(cgImage: cropped, options: [:])
         do {

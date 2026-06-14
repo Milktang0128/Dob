@@ -33,7 +33,7 @@ enum Settings {
     static var ttsEngine: String {
         get {
             let e = d.string(forKey: "ttsEngine") ?? ""
-            return e.isEmpty ? "volcano" : e
+            return e.isEmpty ? AppFlavor.text("volcano", "local") : e
         }
         set { d.set(newValue, forKey: "ttsEngine") }
     }
@@ -59,7 +59,7 @@ enum Settings {
     static var volcVoice: String {
         get {
             let v = d.string(forKey: "volcVoice") ?? ""
-            return v.isEmpty ? "zh_female_cancan_uranus_bigtts" : v
+            return v.isEmpty ? AppFlavor.text("zh_female_cancan_uranus_bigtts", "en_female_dacey_uranus_bigtts") : v
         }
         set { d.set(newValue, forKey: "volcVoice") }
     }

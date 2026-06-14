@@ -14,14 +14,26 @@ final class ActionStore: ObservableObject {
     private let defaultHotkeysKey = "actionsConfig.defaultHotkeys.v3"
     private let defaultPromptsKey = "actionsConfig.defaultPrompts.v4"
 
-    private static let optimizedPrompts: [String: String] = [
-        "explain": "用简体中文解释选中内容。先用一句话说清它的核心意思，再补充关键术语、隐含背景或句子关系，让人听完能真正理解。三到五句，口语化，直接给结论，不要逐字复述原文。",
-        "translate": "根据选中内容的语言自动翻译：中文译成自然地道的英文，其他语言译成自然流畅的简体中文。结合上下文判断语气、指代和专业术语，保留必要的人名、产品名和专有名词。只输出译文，不要解释、注释或前后缀。",
-        "summarize": "用简体中文提炼选中内容的核心要点。先给一句明确结论，再用一到两句补充关键原因、条件或影响。总共不超过三句，适合快速听懂，不要罗列细节或复述原文。",
-        "background": "围绕选中内容补充必要背景知识，说明它是什么、为什么重要，以及需要知道的相关概念、人物、事件或场景。三到五句，简洁口语化，帮助用户听懂当前文本，不要展开成百科介绍，也不要逐字复述原文。",
-        "mnemonic": "为选中内容设计一个容易记住的助记法。先用一句话点明要记住的核心，再给出一个生动的联想、口诀、谐音、画面或首字记忆法，最后简单说明怎么用它回忆原意。简体中文，三到五句，适合朗读。",
-        "closeread": "下面通常是一段英文。用简体中文做精读：先点出句子主干和整体意思，再说明从句、短语或修饰成分如何连接，最后挑出二到四个关键词或短语解释含义和在句中的作用。口语化、条理清楚、适合朗读，不要逐字翻译整句。"
-    ]
+    private static var optimizedPrompts: [String: String] {
+        if AppFlavor.isInternational {
+            return [
+                "explain": "Explain the selected text in clear, natural English. Start with one sentence that states the core meaning, then add the key terms, implied background, or sentence relationships needed to understand it. Keep it concise, three to five spoken sentences, and do not simply paraphrase the original.",
+                "translate": "Translate the selected text into natural English. If it is already English, rewrite it in clearer natural English while preserving meaning, tone, names, product names, and technical terms. Use any provided full-text context only to resolve references and terminology. Output only the translation or rewrite, with no explanation or prefix.",
+                "summarize": "Summarize the selected text in English. Give one clear takeaway first, then one or two short sentences with the most important reason, condition, or implication. Keep it under three spoken sentences and avoid listing minor details.",
+                "background": "Give the concise background needed to understand the selected text: what it refers to, why it matters, and any relevant concept, person, event, or situation. Keep it three to five natural spoken sentences, focused on the selection rather than an encyclopedia-style overview.",
+                "mnemonic": "Create a memorable mnemonic for the selected text. First state what needs to be remembered, then give one vivid association, phrase, sound cue, image, or acronym, and briefly explain how it helps recall the original idea. Use natural English, three to five spoken sentences.",
+                "closeread": "Do a close reading of the selected sentence or passage in English. Start with the main structure and overall meaning, then explain how clauses, phrases, or modifiers connect, and finally call out two to four key words or phrases and their role. Keep it spoken and concise; do not produce a word-by-word translation."
+            ]
+        }
+        return [
+            "explain": "用简体中文解释选中内容。先用一句话说清它的核心意思，再补充关键术语、隐含背景或句子关系，让人听完能真正理解。三到五句，口语化，直接给结论，不要逐字复述原文。",
+            "translate": "根据选中内容的语言自动翻译：中文译成自然地道的英文，其他语言译成自然流畅的简体中文。结合上下文判断语气、指代和专业术语，保留必要的人名、产品名和专有名词。只输出译文，不要解释、注释或前后缀。",
+            "summarize": "用简体中文提炼选中内容的核心要点。先给一句明确结论，再用一到两句补充关键原因、条件或影响。总共不超过三句，适合快速听懂，不要罗列细节或复述原文。",
+            "background": "围绕选中内容补充必要背景知识，说明它是什么、为什么重要，以及需要知道的相关概念、人物、事件或场景。三到五句，简洁口语化，帮助用户听懂当前文本，不要展开成百科介绍，也不要逐字复述原文。",
+            "mnemonic": "为选中内容设计一个容易记住的助记法。先用一句话点明要记住的核心，再给出一个生动的联想、口诀、谐音、画面或首字记忆法，最后简单说明怎么用它回忆原意。简体中文，三到五句，适合朗读。",
+            "closeread": "下面通常是一段英文。用简体中文做精读：先点出句子主干和整体意思，再说明从句、短语或修饰成分如何连接，最后挑出二到四个关键词或短语解释含义和在句中的作用。口语化、条理清楚、适合朗读，不要逐字翻译整句。"
+        ]
+    }
 
     private static let previousDefaultPrompts: [String: Set<String>] = [
         "explain": ["用简洁、口语化的简体中文解释下面这段文本的意思，三到五句话，直接给结论，不要客套，不要逐字复述原文。"],
@@ -35,32 +47,34 @@ final class ActionStore: ObservableObject {
         "closeread": ["下面是一段英文。用简体中文帮我精读，分两部分：① 句式拆解——先点出句子主干（主语+谓语+宾语），再说明各从句、短语和修饰成分是怎么挂接的，让我听懂这句话的结构；② 重点词——挑出 2 到 4 个较难或关键的单词/短语，给出中文释义、读音提示，并说明它在本句里的作用。口语化、条理清楚、适合朗读，不要逐字翻译整句。"]
     ]
 
-    static let builtins: [ActionDef] = [
-        ActionDef(id: "read", name: "朗读", icon: "speaker.wave.2.fill",
+    static var builtins: [ActionDef] {
+        [
+        ActionDef(id: "read", name: AppFlavor.text("朗读", "Read"), icon: "speaker.wave.2.fill",
                   enabled: true, isBuiltin: true, needsLLM: false, prompt: "",
                   hotKeyCode: 15, hotKeyMods: controlKey | shiftKey, hotKeyDisplay: "⌃⇧R"),
-        ActionDef(id: "explain", name: "解释", icon: "lightbulb.fill",
+        ActionDef(id: "explain", name: AppFlavor.text("解释", "Explain"), icon: "lightbulb.fill",
                   enabled: true, isBuiltin: true, needsLLM: true,
                   prompt: optimizedPrompts["explain"]!,
                   hotKeyCode: kVK_ANSI_E, hotKeyMods: controlKey | shiftKey, hotKeyDisplay: "⌃⇧E"),
-        ActionDef(id: "translate", name: "翻译", icon: "globe",
+        ActionDef(id: "translate", name: AppFlavor.text("翻译", "Translate"), icon: "globe",
                   enabled: true, isBuiltin: true, needsLLM: true,
                   prompt: optimizedPrompts["translate"]!,
                   hotKeyCode: kVK_ANSI_T, hotKeyMods: controlKey | shiftKey, hotKeyDisplay: "⌃⇧T"),
-        ActionDef(id: "summarize", name: "提炼", icon: "list.bullet.rectangle.fill",
+        ActionDef(id: "summarize", name: AppFlavor.text("提炼", "Summarize"), icon: "list.bullet.rectangle.fill",
                   enabled: true, isBuiltin: true, needsLLM: true,
                   prompt: optimizedPrompts["summarize"]!),
-        ActionDef(id: "background", name: "背景", icon: "sparkles",
+        ActionDef(id: "background", name: AppFlavor.text("背景", "Context"), icon: "sparkles",
                   enabled: true, isBuiltin: true, needsLLM: true,
                   prompt: optimizedPrompts["background"]!),
         // Preset plays — shipped but OFF by default; enable in 动作按钮.
-        ActionDef(id: "mnemonic", name: "助记", icon: "brain.head.profile",
+        ActionDef(id: "mnemonic", name: AppFlavor.text("助记", "Mnemonic"), icon: "brain.head.profile",
                   enabled: false, isBuiltin: true, needsLLM: true,
                   prompt: optimizedPrompts["mnemonic"]!),
-        ActionDef(id: "closeread", name: "精读", icon: "character.book.closed",
+        ActionDef(id: "closeread", name: AppFlavor.text("精读", "Close Read"), icon: "character.book.closed",
                   enabled: false, isBuiltin: true, needsLLM: true,
                   prompt: optimizedPrompts["closeread"]!)
-    ]
+        ]
+    }
 
     init() { load() }
 
@@ -230,8 +244,12 @@ final class ActionStore: ObservableObject {
         for i in actions.indices {
             let id = actions[i].id
             guard actions[i].isBuiltin,
-                  let optimized = Self.optimizedPrompts[id],
-                  Self.previousDefaultPrompts[id]?.contains(actions[i].prompt) == true else { continue }
+                  let optimized = Self.optimizedPrompts[id] else { continue }
+            if AppFlavor.isInternational {
+                actions[i].prompt = optimized
+                continue
+            }
+            guard Self.previousDefaultPrompts[id]?.contains(actions[i].prompt) == true else { continue }
             actions[i].prompt = optimized
         }
     }

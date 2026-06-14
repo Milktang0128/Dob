@@ -1,5 +1,7 @@
 # 过耳不忘
 
+[English README for ListenMark](README.en.md)
+
 **过耳不忘**是一款 macOS 原生菜单栏 App：
 划词选中任何文本 → 选一个**语音化动作**（朗读 / 解释 / 翻译 / 提炼 / 背景）→ 结果用语音念出 → 一键留档，可搜索、可回看、可重听。
 
@@ -28,7 +30,7 @@
 - 文本动作默认走 DeepSeek `deepseek-v4-flash`（OpenAI 兼容接口），也可在设置里改成 `deepseek-chat` / `deepseek-reasoner`。
 - 解释、翻译、提炼、背景和自定义技能默认会尽量通过 Accessibility 读取当前文本控件或页面的可访问上下文；拿不到时自动回退到选中文本，也可在设置里关闭。
 - 语音合成默认选择火山引擎（豆包语音）TTS；未配置或失败时自动回退到 macOS 本地语音。
-- 数据默认只存在本地：`~/Library/Application Support/ListenMark/`（沿用旧内部目录，包含 `archive.json` + `ListenMark.md`）。
+- 数据默认只存在本地：`~/Library/Application Support/ListenMark/`（沿用旧内部目录，包含 `archive.json` + `过耳不忘.md`）。
 - 启动后会定期检查 GitHub Releases；菜单栏耳朵图标 → **检查更新...** 可手动同步最新安装包。
 
 ## 构建 & 运行

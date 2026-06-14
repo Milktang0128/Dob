@@ -2,7 +2,10 @@ import SwiftUI
 import AVFoundation
 
 struct SettingsView: View {
-    private static let volcanoVoiceListURL = URL(string: "https://www.volcengine.com/docs/6561/1257544?lang=zh")!
+    private static var volcanoVoiceListURL: URL {
+        URL(string: AppFlavor.text("https://www.volcengine.com/docs/6561/1257544?lang=zh",
+                                   "https://www.volcengine.com/docs/6561/1257544"))!
+    }
 
     @AppStorage("autoPop") private var autoPop = true
     @AppStorage("hkDisplay") private var hkDisplay = "⌥⌘R"
@@ -14,11 +17,11 @@ struct SettingsView: View {
     @AppStorage("deepseekModel") private var deepseekModel = "deepseek-v4-flash"
     @AppStorage("useFullContext") private var useFullContext = true
 
-    @AppStorage("ttsEngine") private var ttsEngine = "volcano"
+    @AppStorage("ttsEngine") private var ttsEngine = AppFlavor.text("volcano", "local")
     @AppStorage("volcAppId") private var volcAppId = ""
     @AppStorage("volcToken") private var volcToken = ""
     @AppStorage("volcCluster") private var volcCluster = "volcano_tts"
-    @AppStorage("volcVoice") private var volcVoice = "zh_female_cancan_uranus_bigtts"
+    @AppStorage("volcVoice") private var volcVoice = AppFlavor.text("zh_female_cancan_uranus_bigtts", "en_female_dacey_uranus_bigtts")
     @AppStorage("volcSpeed") private var volcSpeed = 1.0
     @AppStorage("rate") private var rate = Double(AVSpeechUtteranceDefaultSpeechRate)
 
@@ -28,13 +31,13 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("触发方式") {
-                Toggle("划词后自动弹出（推荐）", isOn: $autoPop)
+            Section(AppFlavor.text("触发方式", "Triggers")) {
+                Toggle(AppFlavor.text("划词后自动弹出（推荐）", "Show panel after text selection (recommended)"), isOn: $autoPop)
                     .onChange(of: autoPop) { _, _ in
                         NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
                     }
                 HStack {
-                    Text("弹出面板快捷键")
+                    Text(AppFlavor.text("弹出面板快捷键", "Panel hotkey"))
                     Spacer()
                     HotkeyRecorder(display: $hkDisplay) { code, mods, disp in
                         Settings.hotKeyCode = Int(code)
@@ -47,11 +50,11 @@ struct SettingsView: View {
                 }
             }
 
-            Section("高级取词") {
+            Section(AppFlavor.text("高级取词", "Fallback Capture")) {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("屏幕选框 OCR")
-                        Text("无法直接取词时，按快捷键框选屏幕区域，识别出的文字会进入同一个处理面板。")
+                        Text(AppFlavor.text("屏幕选框 OCR", "Screen selection OCR"))
+                        Text(AppFlavor.text("无法直接取词时，按快捷键框选屏幕区域，识别出的文字会进入同一个处理面板。", "When direct text capture fails, press the hotkey and drag a screen region. Recognized text opens in the same action panel."))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -66,102 +69,102 @@ struct SettingsView: View {
                 }
             }
 
-            Section("留档") {
-                Toggle("自动留档（每次动作都保存）", isOn: $autoArchive)
-                Text("默认关闭——结果卡上点「留档」才保存。")
+            Section(AppFlavor.text("留档", "Saving")) {
+                Toggle(AppFlavor.text("自动留档（每次动作都保存）", "Auto-save every action"), isOn: $autoArchive)
+                Text(AppFlavor.text("默认关闭——结果卡上点「留档」才保存。", "Off by default. Use Save on the result card when you want to keep something."))
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section("留存位置（可读 Markdown）") {
+            Section(AppFlavor.text("留存位置（可读 Markdown）", "Archive Location (Readable Markdown)")) {
                 HStack {
-                    Text(archiveFolder.isEmpty ? "默认（应用支持目录）" : archiveFolder)
+                    Text(archiveFolder.isEmpty ? AppFlavor.text("默认（应用支持目录）", "Default (Application Support)") : archiveFolder)
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Button("选择…") { pickFolder() }
+                    Button(AppFlavor.text("选择…", "Choose…")) { pickFolder() }
                 }
                 HStack {
-                    Button("在访达中显示") { NSWorkspace.shared.open(ArchiveStore.shared.revealFolder) }
+                    Button(AppFlavor.text("在访达中显示", "Show in Finder")) { NSWorkspace.shared.open(ArchiveStore.shared.revealFolder) }
                     if !archiveFolder.isEmpty {
-                        Button("用默认") { archiveFolder = ""; ArchiveStore.shared.relocate() }
+                        Button(AppFlavor.text("用默认", "Use Default")) { archiveFolder = ""; ArchiveStore.shared.relocate() }
                     }
                 }
-                Text("可读的档案 Markdown 会写到这里——放进 Obsidian 库即可随时查看、供后续 agent 管理。")
+                Text(AppFlavor.text("可读的档案 Markdown 会写到这里——放进 Obsidian 库即可随时查看、供后续 agent 管理。", "Readable Markdown is written here, so you can keep it in Obsidian or any folder you want to review later."))
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section("技能") {
+            Section(AppFlavor.text("技能", "Actions")) {
                 HStack {
-                    Text("排序、设置快捷键、禁用、或新增最多 4 个自定义技能。技能快捷键会直接处理当前选中文本。")
+                    Text(AppFlavor.text("排序、设置快捷键、禁用、或新增最多 4 个自定义技能。技能快捷键会直接处理当前选中文本。", "Reorder, set hotkeys, disable actions, or add up to 4 custom actions. Action hotkeys process the current selection directly."))
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("编辑技能…") {
+                    Button(AppFlavor.text("编辑技能…", "Edit Actions…")) {
                         NotificationCenter.default.post(name: .gebwOpenActions, object: nil)
                     }
                 }
-                Text("朗读固定在第一位；浮窗显示前 5 个启用技能，其余收在更多菜单。")
+                Text(AppFlavor.text("朗读固定在第一位；浮窗显示前 5 个启用技能，其余收在更多菜单。", "Read stays first. The floating panel shows the first 5 enabled actions; the rest live in the More menu."))
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section("解释 / 翻译模型（DeepSeek）") {
-                Toggle("默认使用全文上下文", isOn: $useFullContext)
-                Text("开启后，解释、翻译、提炼、背景和自定义技能会尽量读取当前文本控件或页面的可访问上下文，只把它作为选中内容的参考；拿不到时自动回退。")
+            Section(AppFlavor.text("解释 / 翻译模型（DeepSeek）", "AI Model (DeepSeek)")) {
+                Toggle(AppFlavor.text("默认使用全文上下文", "Use full-text context by default"), isOn: $useFullContext)
+                Text(AppFlavor.text("开启后，解释、翻译、提炼、背景和自定义技能会尽量读取当前文本控件或页面的可访问上下文，只把它作为选中内容的参考；拿不到时自动回退。", "When enabled, AI actions try to read accessible surrounding text and use it only as context for the selected text. If context is unavailable, they fall back automatically."))
                     .font(.caption).foregroundStyle(.secondary)
-                SecureField("DeepSeek API Key（sk-…）", text: $deepseekKey)
-                TextField("模型", text: $deepseekModel)
-                Text("默认 deepseek-v4-flash（快）；也可填 deepseek-chat / deepseek-reasoner。")
+                SecureField(AppFlavor.text("DeepSeek API Key（sk-…）", "DeepSeek API Key (sk-...)"), text: $deepseekKey)
+                TextField(AppFlavor.text("模型", "Model"), text: $deepseekModel)
+                Text(AppFlavor.text("默认 deepseek-v4-flash（快）；也可填 deepseek-chat / deepseek-reasoner。", "Default is deepseek-v4-flash for speed. You can also use deepseek-chat or deepseek-reasoner."))
                     .font(.caption).foregroundStyle(.secondary)
-                Link("前往 DeepSeek 获取 API Key ↗", destination: URL(string: "https://platform.deepseek.com/api_keys")!)
+                Link(AppFlavor.text("前往 DeepSeek 获取 API Key ↗", "Get a DeepSeek API Key ↗"), destination: URL(string: "https://platform.deepseek.com/api_keys")!)
                     .font(.caption)
             }
 
-            Section("语音合成") {
-                Picker("引擎", selection: $ttsEngine) {
-                    Text("火山引擎 · 推荐").tag("volcano")
-                    Text("本地（macOS）").tag("local")
+            Section(AppFlavor.text("语音合成", "Text-to-Speech")) {
+                Picker(AppFlavor.text("引擎", "Engine"), selection: $ttsEngine) {
+                    Text(AppFlavor.text("火山引擎 · 推荐", "Volcengine")).tag("volcano")
+                    Text(AppFlavor.text("本地（macOS）", "Local (macOS)")).tag("local")
                 }
                 .pickerStyle(.segmented)
 
                 if ttsEngine == "volcano" {
-                    Link("没有账号？前往火山引擎语音控制台开通、获取 App ID / Token ↗",
+                    Link(AppFlavor.text("没有账号？前往火山引擎语音控制台开通、获取 App ID / Token ↗", "Open the Volcengine speech console to get App ID / Token ↗"),
                          destination: URL(string: "https://console.volcengine.com/speech/app")!)
                         .font(.caption)
                     SecureField("App ID", text: $volcAppId)
                     SecureField("Access Token", text: $volcToken)
-                    Picker("音色", selection: $volcVoice) {
+                    Picker(AppFlavor.text("音色", "Voice"), selection: $volcVoice) {
                         ForEach(VolcanoVoices.all) { voice in
                             Text(voice.name).tag(voice.id)
                         }
                         if !VolcanoVoices.all.contains(where: { $0.id == volcVoice }) {
-                            Text("自定义（\(volcVoice)）").tag(volcVoice)
+                            Text(AppFlavor.text("自定义（\(volcVoice)）", "Custom (\(volcVoice))")).tag(volcVoice)
                         }
                     }
-                    Link("查看官方完整音色列表，复制 voice_type 填到下方 ↗",
+                    Link(AppFlavor.text("查看官方完整音色列表，复制 voice_type 填到下方 ↗", "Open the full official voice list and copy voice_type below ↗"),
                          destination: Self.volcanoVoiceListURL)
                         .font(.caption)
-                    TextField("自定义 voice_type（可选）", text: $volcVoice)
+                    TextField(AppFlavor.text("自定义 voice_type（可选）", "Custom voice_type (optional)"), text: $volcVoice)
                     TextField("Cluster", text: $volcCluster)
                     HStack {
-                        Text("语速")
+                        Text(AppFlavor.text("语速", "Speed"))
                         Slider(value: $volcSpeed, in: 0.5...2.0)
                         Text(String(format: "%.1fx", volcSpeed)).font(.caption).foregroundStyle(.secondary)
                     }
                     if volcUnconfigured {
-                        Text("未填 App ID / Access Token，暂时回退本地语音。")
+                        Text(AppFlavor.text("未填 App ID / Access Token，暂时回退本地语音。", "App ID or Access Token is missing, so local macOS speech is used for now."))
                             .font(.caption).foregroundStyle(.orange)
                     }
-                    Text("音色需在火山控制台开通；下拉只列常用大模型音色，完整列表以官方文档为准。")
+                    Text(AppFlavor.text("音色需在火山控制台开通；下拉只列常用大模型音色，完整列表以官方文档为准。", "Voices must be enabled in the Volcengine console. The picker lists common voices; the official documentation is the source of truth."))
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
                     HStack {
-                        Text("本地语速")
+                        Text(AppFlavor.text("本地语速", "Local speed"))
                         Slider(value: $rate, in: 0.3...0.7)
                     }
                 }
 
-                Button("试听") {
+                Button(AppFlavor.text("试听", "Test Voice")) {
                     Settings.speechRate = Float(rate)
-                    Speaker.shared.speak("过耳不忘，这是当前语音的试听效果。")
+                    Speaker.shared.speak(AppFlavor.text("过耳不忘，这是当前语音的试听效果。", "ListenMark. This is how the current voice sounds."))
                 }
             }
         }
@@ -174,7 +177,7 @@ struct SettingsView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "选择"
+        panel.prompt = AppFlavor.text("选择", "Choose")
         if panel.runModal() == .OK, let url = panel.url {
             archiveFolder = url.path
             ArchiveStore.shared.relocate()

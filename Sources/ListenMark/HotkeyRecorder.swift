@@ -33,13 +33,13 @@ final class RecorderContainer: NSView {
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
         cancelButton.bezelStyle = .circular
         cancelButton.setButtonType(.momentaryPushIn)
-        cancelButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "取消录制")
+        cancelButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: AppFlavor.text("取消录制", "Cancel recording"))
         cancelButton.imageScaling = .scaleProportionallyDown
         cancelButton.isBordered = false
         cancelButton.contentTintColor = .tertiaryLabelColor
         cancelButton.target = self
         cancelButton.action = #selector(cancelRecording)
-        cancelButton.toolTip = "取消录制"
+        cancelButton.toolTip = AppFlavor.text("取消录制", "Cancel recording")
         cancelButton.isHidden = true
 
         addSubview(recorder)
@@ -94,7 +94,7 @@ final class RecorderButton: NSButton {
         guard !recording else { return }
         previousTitle = title
         recording = true
-        title = "按下新快捷键…"
+        title = AppFlavor.text("按下新快捷键…", "Press new hotkey...")
         onRecordingChanged?(true)
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             self?.capture(e)

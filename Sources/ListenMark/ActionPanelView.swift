@@ -86,7 +86,7 @@ struct ActionPanelView: View {
             }
             .buttonStyle(.plain)
             .fixedSize()
-            .help("复制原文")
+            .help(AppFlavor.text("复制原文", "Copy Original"))
             .popover(isPresented: $showOriginalCopyBubble, arrowEdge: .bottom) {
                 CopyArchiveBubble(archived: originalCopyArchived) {
                     model.onArchiveOriginal?()
@@ -97,7 +97,7 @@ struct ActionPanelView: View {
 
             Menu {
                 if !overflowActions.isEmpty {
-                    Section("更多技能") {
+                    Section(AppFlavor.text("更多技能", "More Actions")) {
                         ForEach(overflowActions) { def in
                             Button {
                                 model.onPick?(def)
@@ -108,10 +108,10 @@ struct ActionPanelView: View {
                     }
                     Divider()
                 }
-                Button("今日回响…") { model.onOpenReview?() }
-                Button("编辑技能…") { model.onOpenActions?() }
-                Button("打开档案…") { model.onOpenArchive?() }
-                Button("设置…") { model.onOpenSettings?() }
+                Button(AppFlavor.text("今日回响…", "Review…")) { model.onOpenReview?() }
+                Button(AppFlavor.text("编辑技能…", "Edit Actions…")) { model.onOpenActions?() }
+                Button(AppFlavor.text("打开档案…", "Open Archive…")) { model.onOpenArchive?() }
+                Button(AppFlavor.text("设置…", "Settings…")) { model.onOpenSettings?() }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 13, weight: .semibold))
@@ -131,7 +131,7 @@ struct ActionPanelView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("关闭")
+            .help(AppFlavor.text("关闭", "Close"))
         }
         .padding(.horizontal, 8)
         .frame(height: 40)
@@ -155,7 +155,7 @@ struct ActionPanelView: View {
         case .loading(let label):
             HStack(spacing: 9) {
                 ProgressView().controlSize(.small)
-                Text("正在\(label)…").font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(AppFlavor.text("正在\(label)…", "\(label) in progress...")).font(.system(size: 13)).foregroundStyle(.secondary)
                 Spacer()
             }
             .padding(.horizontal, 14).padding(.vertical, 13)
@@ -172,7 +172,7 @@ struct ActionPanelView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if contextUsed {
-                        Label("已附带上下文", systemImage: "doc.text.magnifyingglass")
+                        Label(AppFlavor.text("已附带上下文", "Context included"), systemImage: "doc.text.magnifyingglass")
                             .font(.system(size: 10, weight: .medium))
                             .labelStyle(.titleAndIcon)
                             .foregroundStyle(.secondary)
@@ -182,7 +182,7 @@ struct ActionPanelView: View {
                     }
                     Spacer()
                     if archived {
-                        Text("已留档").font(.system(size: 10)).foregroundStyle(.tertiary)
+                        Text(AppFlavor.text("已留档", "Saved")).font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
 
@@ -218,10 +218,10 @@ struct ActionPanelView: View {
     private func controls(text: String, replay: Bool, archived: Bool) -> some View {
         HStack(spacing: 7) {
             if replay {
-                Button { model.onReplay?() } label: { Label("重听", systemImage: "play.fill") }
+                Button { model.onReplay?() } label: { Label(AppFlavor.text("重听", "Replay"), systemImage: "play.fill") }
                     .buttonStyle(.borderedProminent)
             }
-            Button { model.onStop?() } label: { Label("停止", systemImage: "stop.fill") }
+            Button { model.onStop?() } label: { Label(AppFlavor.text("停止", "Stop"), systemImage: "stop.fill") }
                 .buttonStyle(.bordered)
             Button {
                 if model.onCopyResult?(text) == true {
@@ -231,7 +231,7 @@ struct ActionPanelView: View {
                 Image(systemName: "doc.on.doc")
             }
             .buttonStyle(.bordered)
-            .help("复制结果")
+            .help(AppFlavor.text("复制结果", "Copy Result"))
             .popover(isPresented: $showResultCopyBubble, arrowEdge: .bottom) {
                 CopyArchiveBubble(archived: archived || resultCopyArchived,
                                   canArchive: replay && !archived && !resultCopyArchived) {
@@ -241,12 +241,12 @@ struct ActionPanelView: View {
                 }
             }
             if replay && !archived {
-                Button { model.onArchive?() } label: { Label("留档", systemImage: "tray.and.arrow.down.fill") }
+                Button { model.onArchive?() } label: { Label(AppFlavor.text("留档", "Save"), systemImage: "tray.and.arrow.down.fill") }
                     .buttonStyle(.bordered).tint(.accentColor)
             }
             Spacer()
             Button { model.onClose?() } label: { Image(systemName: "xmark") }
-                .buttonStyle(.bordered).help("关闭")
+                .buttonStyle(.bordered).help(AppFlavor.text("关闭", "Close"))
         }
         .controlSize(.small)
         .buttonBorderShape(.capsule)
@@ -294,11 +294,11 @@ private struct CopyArchiveBubble: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Label("已复制", systemImage: "checkmark.circle.fill")
+            Label(AppFlavor.text("已复制", "Copied"), systemImage: "checkmark.circle.fill")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
             if archived {
-                Text("已留档")
+                Text(AppFlavor.text("已留档", "Saved"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
             } else if canArchive {
@@ -306,7 +306,7 @@ private struct CopyArchiveBubble: View {
                 Button {
                     onArchive()
                 } label: {
-                    Label("留档", systemImage: "tray.and.arrow.down.fill")
+                    Label(AppFlavor.text("留档", "Save"), systemImage: "tray.and.arrow.down.fill")
                 }
                 .buttonStyle(.borderless)
                 .font(.system(size: 12, weight: .semibold))

@@ -102,21 +102,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "隐藏 过耳不忘", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: AppFlavor.text("隐藏 \(AppFlavor.appName)", "Hide \(AppFlavor.appName)"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 过耳不忘", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: AppFlavor.text("退出 \(AppFlavor.appName)", "Quit \(AppFlavor.appName)"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
 
         let editItem = NSMenuItem()
         mainMenu.addItem(editItem)
-        let editMenu = NSMenu(title: "编辑")
-        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
+        let editMenu = NSMenu(title: AppFlavor.text("编辑", "Edit"))
+        editMenu.addItem(withTitle: AppFlavor.text("撤销", "Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: AppFlavor.text("重做", "Redo"), action: Selector(("redo:")), keyEquivalent: "Z")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "剪切", action: Selector(("cut:")), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "复制", action: Selector(("copy:")), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "粘贴", action: Selector(("paste:")), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "全选", action: Selector(("selectAll:")), keyEquivalent: "a")
+        editMenu.addItem(withTitle: AppFlavor.text("剪切", "Cut"), action: Selector(("cut:")), keyEquivalent: "x")
+        editMenu.addItem(withTitle: AppFlavor.text("复制", "Copy"), action: Selector(("copy:")), keyEquivalent: "c")
+        editMenu.addItem(withTitle: AppFlavor.text("粘贴", "Paste"), action: Selector(("paste:")), keyEquivalent: "v")
+        editMenu.addItem(withTitle: AppFlavor.text("全选", "Select All"), action: Selector(("selectAll:")), keyEquivalent: "a")
         editItem.submenu = editMenu
         NSApp.mainMenu = mainMenu
     }
@@ -131,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                           onFire: { [weak self] in
             self?.triggerCapture()
         }) {
-            NSLog("ListenMark · 弹出面板快捷键注册失败：\(Settings.hotKeyDisplay)")
+            NSLog("ListenMark · \(AppFlavor.text("弹出面板快捷键注册失败", "panel hotkey registration failed"))：\(Settings.hotKeyDisplay)")
         }
         if !HotkeyManager.shared.register(id: 2,
                                           keyCode: UInt32(Settings.ocrHotKeyCode),
@@ -139,10 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                           onFire: { [weak self] in
             self?.triggerScreenOCR()
         }) {
-            NSLog("ListenMark · 屏幕 OCR 快捷键注册失败：\(Settings.ocrHotKeyDisplay)")
+            NSLog("ListenMark · \(AppFlavor.text("屏幕 OCR 快捷键注册失败", "screen OCR hotkey registration failed"))：\(Settings.ocrHotKeyDisplay)")
         }
         registerActionHotKeys()
-        triggerMenuItem?.title = "处理选中文本  \(Settings.hotKeyDisplay)"
+        triggerMenuItem?.title = "\(AppFlavor.text("处理选中文本", "Process Selection"))  \(Settings.hotKeyDisplay)"
 
         if let m = mouseUpMonitor { NSEvent.removeMonitor(m); mouseUpMonitor = nil }
         if Settings.autoPop {
@@ -163,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                               onFire: { [weak self] in
                 self?.triggerAction(action.id)
             }) {
-                NSLog("ListenMark · 技能快捷键注册失败：\(action.name) \(action.hotKeyDisplay ?? "")")
+                NSLog("ListenMark · \(AppFlavor.text("技能快捷键注册失败", "action hotkey registration failed"))：\(action.name) \(action.hotKeyDisplay ?? "")")
             }
         }
     }
@@ -183,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard text != self.lastAutoText else { return }
             self.cancelActiveAction()
             self.lastAutoText = text
-            self.currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? "未知来源"
+            self.currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? AppFlavor.text("未知来源", "Unknown Source")
             self.currentText = text
             self.currentContext = ""
             self.currentContextSource = contextSource
@@ -199,28 +199,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let btn = statusItem.button {
-            btn.image = NSImage(systemSymbolName: "ear", accessibilityDescription: "过耳不忘")
+            btn.image = NSImage(systemSymbolName: "ear", accessibilityDescription: AppFlavor.appName)
             btn.image?.isTemplate = true
         }
         let menu = NSMenu()
-        let trigger = NSMenuItem(title: "处理选中文本", action: #selector(triggerFromMenu), keyEquivalent: "")
+        let trigger = NSMenuItem(title: AppFlavor.text("处理选中文本", "Process Selection"), action: #selector(triggerFromMenu), keyEquivalent: "")
         trigger.target = self
         menu.addItem(trigger)
         triggerMenuItem = trigger
         menu.addItem(.separator())
-        let review = NSMenuItem(title: "今日回响…", action: #selector(openReview), keyEquivalent: "")
+        let review = NSMenuItem(title: AppFlavor.text("今日回响…", "Review…"), action: #selector(openReview), keyEquivalent: "")
         review.target = self
         menu.addItem(review)
         reviewMenuItem = review
-        add(menu, "打开档案…", #selector(openArchive))
-        add(menu, "编辑技能…", #selector(openActions))
-        add(menu, "设置…", #selector(openSettings))
-        add(menu, "检查更新…", #selector(checkForUpdates))
+        add(menu, AppFlavor.text("打开档案…", "Open Archive…"), #selector(openArchive))
+        add(menu, AppFlavor.text("编辑技能…", "Edit Actions…"), #selector(openActions))
+        add(menu, AppFlavor.text("设置…", "Settings…"), #selector(openSettings))
+        add(menu, AppFlavor.text("检查更新…", "Check for Updates…"), #selector(checkForUpdates))
         menu.addItem(.separator())
-        add(menu, "辅助功能权限设置…", #selector(openAXPrefs))
-        add(menu, "打开档案文件夹", #selector(openArchiveFolder))
+        add(menu, AppFlavor.text("辅助功能权限设置…", "Accessibility Settings…"), #selector(openAXPrefs))
+        add(menu, AppFlavor.text("打开档案文件夹", "Open Archive Folder"), #selector(openArchiveFolder))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "退出 过耳不忘", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: AppFlavor.text("退出 \(AppFlavor.appName)", "Quit \(AppFlavor.appName)"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         menu.delegate = self
         statusItem.menu = menu
     }
@@ -228,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Refresh the 今日回响 due-count badge each time the menu opens (passive nudge).
     func menuNeedsUpdate(_ menu: NSMenu) {
         let n = ArchiveStore.shared.dueCount
-        reviewMenuItem?.title = n > 0 ? "今日回响（\(n)）…" : "今日回响…"
+        reviewMenuItem?.title = n > 0 ? AppFlavor.text("今日回响（\(n)）…", "Review (\(n))…") : AppFlavor.text("今日回响…", "Review…")
     }
 
     private func add(_ menu: NSMenu, _ title: String, _ action: Selector) {
@@ -252,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func triggerScreenOCR() {
         cancelActiveAction()
         let generation = actionGeneration
-        currentSource = "屏幕 OCR"
+        currentSource = AppFlavor.text("屏幕 OCR", "Screen OCR")
         ScreenOCR.shared.start { [weak self] text in
             guard let self else { return }
             guard self.actionGeneration == generation else { return }
@@ -265,7 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.currentResult = ""
                 self.pendingEntry = nil
                 self.showPanel()
-                self.panel.model.phase = .error("没有识别到文字——可能需要屏幕录制权限，或框选区域没有清晰文字")
+                self.panel.model.phase = .error(AppFlavor.text("没有识别到文字——可能需要屏幕录制权限，或框选区域没有清晰文字", "No text was recognized. Screen Recording permission may be missing, or the selected area may not contain clear text."))
                 return
             }
 
@@ -283,7 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func triggerSelection(actionID: String?) {
         cancelActiveAction()
         let generation = actionGeneration
-        currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? "未知来源"
+        currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? AppFlavor.text("未知来源", "Unknown Source")
         let contextSource = SelectionGrabber.contextSource()
         SelectionGrabber.grabAsync { [weak self] text in
             guard let self else { return }
@@ -295,9 +295,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.currentContextUsed = false
                 self.showPanel()
                 if SelectionGrabber.isTrusted {
-                    self.panel.model.phase = .error("没取到选中文本——先选中文字再触发")
+                    self.panel.model.phase = .error(AppFlavor.text("没取到选中文本——先选中文字再触发", "No selected text found. Select text first, then trigger ListenMark."))
                 } else {
-                    self.panel.model.phase = .error("需要「辅助功能」权限才能取词（菜单 › 辅助功能权限设置）")
+                    self.panel.model.phase = .error(AppFlavor.text("需要「辅助功能」权限才能取词（菜单 › 辅助功能权限设置）", "Accessibility permission is required to read selected text. Use the menu item Accessibility Settings."))
                 }
                 return
             }
@@ -311,7 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.showPanel()
             if let actionID {
                 guard let action = ActionStore.shared.actions.first(where: { $0.id == actionID }) else {
-                    self.panel.model.phase = .error("这个技能不存在或已被删除")
+                    self.panel.model.phase = .error(AppFlavor.text("这个技能不存在或已被删除", "This action no longer exists."))
                     return
                 }
                 self.perform(action)
@@ -356,7 +356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.model.active = action.id
 
         if action.needsLLM && Settings.deepseekKey.isEmpty {
-            panel.model.phase = .error("「\(action.name)」需要 DeepSeek API Key，请到「设置」填写")
+            panel.model.phase = .error(AppFlavor.text("「\(action.name)」需要 DeepSeek API Key，请到「设置」填写", "\(action.name) needs a DeepSeek API Key. Add it in Settings."))
             return
         }
 
@@ -418,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             } catch {
                 await MainActor.run {
                     guard self.actionGeneration == generation else { return }
-                    self.panel.model.phase = .error("出错：\(Self.describe(error))")
+                    self.panel.model.phase = .error(AppFlavor.text("出错：\(Self.describe(error))", "Error: \(Self.describe(error))"))
                 }
             }
         }
@@ -450,14 +450,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let cleanContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanContext.isEmpty, cleanContext != selectedText else { return (action.prompt, selectedText, false) }
 
-        let prompt = action.prompt + "\n\n如果用户同时提供「全文上下文」，请只把它当作理解选中内容的上下文；回答仍然围绕「选中内容」执行当前技能，不要改为概括整篇全文，除非当前技能明确要求概括。"
-        let text = """
-        选中内容：
-        \(selectedText)
+        let prompt = action.prompt + "\n\n" + AppFlavor.text(
+            "如果用户同时提供「全文上下文」，请只把它当作理解选中内容的上下文；回答仍然围绕「选中内容」执行当前技能，不要改为概括整篇全文，除非当前技能明确要求概括。",
+            "If the user provides full-text context, use it only as context for understanding the selected text. Keep the answer focused on the selected text and do not summarize the whole context unless the current action explicitly asks for that."
+        )
+        let text = AppFlavor.text(
+            """
+            选中内容：
+            \(selectedText)
 
-        全文上下文：
-        \(cleanContext)
-        """
+            全文上下文：
+            \(cleanContext)
+            """,
+            """
+            Selected text:
+            \(selectedText)
+
+            Full-text context:
+            \(cleanContext)
+            """
+        )
         return (prompt, text, true)
     }
 
@@ -471,8 +483,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let selected = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanContext.isEmpty, !selected.isEmpty else { return nil }
 
-        let markerStart = "【选中内容开始】"
-        let markerEnd = "【选中内容结束】"
+        let markerStart = AppFlavor.text("【选中内容开始】", "[Selection begins]")
+        let markerEnd = AppFlavor.text("【选中内容结束】", "[Selection ends]")
         guard let range = cleanContext.range(of: selected, options: [.caseInsensitive, .diacriticInsensitive])
                 ?? compactRange(of: selected, in: cleanContext) else { return nil }
 
@@ -521,7 +533,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func archiveOriginalCopy() {
-        let entry = Entry(action: "摘录", icon: "doc.on.doc", sourceApp: currentSource,
+        let entry = Entry(action: AppFlavor.text("摘录", "Clip"), icon: "doc.on.doc", sourceApp: currentSource,
                           original: currentText, response: nil)
         ArchiveStore.shared.add(entry)
     }
@@ -539,9 +551,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static func describe(_ error: Error) -> String {
         if let e = error as? LLMError {
             switch e {
-            case .noKey: return "未设置 DeepSeek API Key"
+            case .noKey: return AppFlavor.text("未设置 DeepSeek API Key", "DeepSeek API Key is missing")
             case .http(let code, let msg): return "HTTP \(code) \(msg.prefix(120))"
-            case .badResponse: return "响应解析失败"
+            case .badResponse: return AppFlavor.text("响应解析失败", "Could not parse the response")
             }
         }
         return error.localizedDescription
@@ -567,19 +579,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openArchive() {
-        showWindow(&archiveWindow, size: NSSize(width: 880, height: 580), title: "过耳不忘 · 档案") { ArchiveView() }
+        showWindow(&archiveWindow, size: NSSize(width: 880, height: 580), title: AppFlavor.text("\(AppFlavor.appName) · 档案", "\(AppFlavor.appName) · Archive")) { ArchiveView() }
     }
 
     @objc private func openSettings() {
-        showWindow(&settingsWindow, size: NSSize(width: 470, height: 640), title: "过耳不忘 · 设置") { SettingsView() }
+        showWindow(&settingsWindow, size: NSSize(width: 470, height: 640), title: AppFlavor.text("\(AppFlavor.appName) · 设置", "\(AppFlavor.appName) · Settings")) { SettingsView() }
     }
 
     @objc private func openActions() {
-        showWindow(&actionsWindow, size: NSSize(width: 520, height: 560), title: "过耳不忘 · 编辑技能") { ActionsConfigView() }
+        showWindow(&actionsWindow, size: NSSize(width: 520, height: 560), title: AppFlavor.text("\(AppFlavor.appName) · 编辑技能", "\(AppFlavor.appName) · Edit Actions")) { ActionsConfigView() }
     }
 
     @objc private func openReview() {
-        showWindow(&reviewWindow, size: NSSize(width: 520, height: 600), title: "过耳不忘 · 今日回响") { ReviewView() }
+        showWindow(&reviewWindow, size: NSSize(width: 520, height: 600), title: AppFlavor.text("\(AppFlavor.appName) · 今日回响", "\(AppFlavor.appName) · Review")) { ReviewView() }
     }
 
     @objc private func openAXPrefs() {
@@ -599,14 +611,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func checkTrust() {
         if SelectionGrabber.isTrusted { return }
         let alert = NSAlert()
-        alert.messageText = "需要「辅助功能」权限"
-        alert.informativeText = """
-        过耳不忘需要「辅助功能」权限，才能读取你在其它应用里选中的文本。
+        alert.messageText = AppFlavor.text("需要「辅助功能」权限", "Accessibility Permission Required")
+        alert.informativeText = AppFlavor.text(
+            """
+            过耳不忘需要「辅助功能」权限，才能读取你在其它应用里选中的文本。
 
-        请在 系统设置 › 隐私与安全性 › 辅助功能 中打开「过耳不忘」，然后重新启动本应用。
-        """
-        alert.addButton(withTitle: "打开设置")
-        alert.addButton(withTitle: "稍后")
+            请在 系统设置 › 隐私与安全性 › 辅助功能 中打开「过耳不忘」，然后重新启动本应用。
+            """,
+            """
+            ListenMark needs Accessibility permission to read selected text in other apps.
+
+            Open System Settings › Privacy & Security › Accessibility, enable ListenMark, then restart the app.
+            """
+        )
+        alert.addButton(withTitle: AppFlavor.text("打开设置", "Open Settings"))
+        alert.addButton(withTitle: AppFlavor.text("稍后", "Later"))
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             openAXPrefs()

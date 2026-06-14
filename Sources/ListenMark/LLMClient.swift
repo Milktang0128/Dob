@@ -76,8 +76,12 @@ enum LLMClient {
     /// Appended to every action prompt: the answer is read aloud by TTS, so it
     /// must be plain spoken text with no Markdown — otherwise TTS literally reads
     /// out "井号 / 星号" etc.
-    private static let plainTextRule =
-        "输出要求：你的回答会被语音合成直接朗读，必须是纯文本口语，绝对不要使用任何 Markdown 或排版符号——不要 # 标题、不要 * 或 ** 加粗、不要反引号、不要 - 或 1. 2. 之类的列表符号、不要表格或分隔线。需要分点时用「首先」「其次」「最后」或顿号、逗号自然连接成话。"
+    private static var plainTextRule: String {
+        AppFlavor.text(
+            "输出要求：你的回答会被语音合成直接朗读，必须是纯文本口语，绝对不要使用任何 Markdown 或排版符号——不要 # 标题、不要 * 或 ** 加粗、不要反引号、不要 - 或 1. 2. 之类的列表符号、不要表格或分隔线。需要分点时用「首先」「其次」「最后」或顿号、逗号自然连接成话。",
+            "Output requirement: your answer will be read aloud by text-to-speech, so it must be natural spoken plain text. Do not use Markdown or formatting symbols: no headings, asterisks, backticks, bullet symbols, numbered lists, tables, or separators. If structure is needed, use spoken transitions like first, next, finally, or connect ideas naturally in sentences."
+        )
+    }
 
     private static func requestBody(prompt: String, text: String, stream: Bool) -> [String: Any] {
         [

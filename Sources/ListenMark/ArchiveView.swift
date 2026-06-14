@@ -2,12 +2,12 @@ import SwiftUI
 
 func actionTint(_ name: String) -> Color {
     switch name {
-    case "朗读": return .blue
-    case "解释": return .orange
-    case "翻译": return .green
-    case "提炼": return .purple
-    case "背景": return .pink
-    case "摘录": return .gray
+    case "朗读", "Read": return .blue
+    case "解释", "Explain": return .orange
+    case "翻译", "Translate": return .green
+    case "提炼", "Summarize": return .purple
+    case "背景", "Context": return .pink
+    case "摘录", "Clip": return .gray
     default: return .teal
     }
 }
@@ -43,12 +43,12 @@ struct ArchiveView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $filter) {
-                Section("资源库") {
-                    Label("全部记录", systemImage: "tray.full")
+                Section(AppFlavor.text("资源库", "Library")) {
+                    Label(AppFlavor.text("全部记录", "All Items"), systemImage: "tray.full")
                         .badge(store.entries.count)
                         .tag(Filter.all)
                 }
-                Section("按动作") {
+                Section(AppFlavor.text("按动作", "By Action")) {
                     ForEach(actions.actions) { def in
                         HStack(spacing: 9) {
                             Circle().fill(actionTint(def.name)).frame(width: 8, height: 8)
@@ -64,7 +64,7 @@ struct ArchiveView: View {
         } detail: {
             detail
         }
-        .navigationTitle("档案")
+        .navigationTitle(AppFlavor.text("档案", "Archive"))
     }
 
     private var detail: some View {
@@ -72,7 +72,7 @@ struct ArchiveView: View {
             HStack(spacing: 10) {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
-                    TextField("搜索原文或 AI 回应…", text: $query)
+                    TextField(AppFlavor.text("搜索原文或 AI 回应…", "Search original text or AI responses..."), text: $query)
                         .textFieldStyle(.plain).font(.system(size: 13))
                     if !query.isEmpty {
                         Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
@@ -82,7 +82,7 @@ struct ArchiveView: View {
                 .padding(.horizontal, 10).padding(.vertical, 7)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
 
-                Text("\(filtered.count) 条").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(AppFlavor.text("\(filtered.count) 条", "\(filtered.count) items")).font(.system(size: 12)).foregroundStyle(.secondary)
             }
             .padding(14)
             Divider()
@@ -91,7 +91,7 @@ struct ArchiveView: View {
                 VStack(spacing: 12) {
                     Image(systemName: store.entries.isEmpty ? "ear" : "magnifyingglass")
                         .font(.system(size: 30)).foregroundStyle(.tertiary)
-                    Text(store.entries.isEmpty ? "还没有记录\n选中文本，处理后点「留档」" : "没有匹配的记录")
+                    Text(store.entries.isEmpty ? AppFlavor.text("还没有记录\n选中文本，处理后点「留档」", "No saved items yet\nSelect text, run an action, then save it") : AppFlavor.text("没有匹配的记录", "No matching items"))
                         .multilineTextAlignment(.center)
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                 }
@@ -133,7 +133,7 @@ private struct EntryCard: View {
                 .background(Capsule().fill(tint.opacity(0.14)))
 
                 if entry.contextUsed == true {
-                    Label("已附带上下文", systemImage: "doc.text.magnifyingglass")
+                    Label(AppFlavor.text("已附带上下文", "Context included"), systemImage: "doc.text.magnifyingglass")
                         .font(.system(size: 10, weight: .medium))
                         .labelStyle(.titleAndIcon)
                         .foregroundStyle(.secondary)
@@ -146,10 +146,10 @@ private struct EntryCard: View {
                 Spacer()
                 Button { Speaker.shared.speak(entry.response ?? entry.original) } label: {
                     Image(systemName: "play.circle").font(.system(size: 15))
-                }.buttonStyle(.plain).foregroundStyle(hover ? .primary : .secondary).help("重听")
+                }.buttonStyle(.plain).foregroundStyle(hover ? .primary : .secondary).help(AppFlavor.text("重听", "Replay"))
                 Button { store.delete(entry) } label: {
                     Image(systemName: "trash").font(.system(size: 13))
-                }.buttonStyle(.plain).foregroundStyle(hover ? .secondary : .tertiary).help("删除")
+                }.buttonStyle(.plain).foregroundStyle(hover ? .secondary : .tertiary).help(AppFlavor.text("删除", "Delete"))
             }
 
             Text(entry.original)
@@ -162,7 +162,7 @@ private struct EntryCard: View {
             }
 
             if let context = entry.contextExcerpt, !context.isEmpty {
-                DisclosureGroup("上下文摘录", isExpanded: $showContext) {
+                DisclosureGroup(AppFlavor.text("上下文摘录", "Context excerpt"), isExpanded: $showContext) {
                     Text(context)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)

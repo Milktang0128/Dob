@@ -25,24 +25,24 @@ struct ActionsConfigView: View {
                                                              store: store))
                 }
             } header: {
-                Text("朗读固定第一；拖动左侧把手调整其它技能；浮窗显示前 5 个启用技能，其余收在更多菜单")
+                Text(AppFlavor.text("朗读固定第一；拖动左侧把手调整其它技能；浮窗显示前 5 个启用技能，其余收在更多菜单", "Read stays first. Drag the handle to reorder other actions. The panel shows the first 5 enabled actions; the rest live in More."))
             }
 
             Section {
                 Button {
                     editing = EditTarget(
-                        def: ActionDef(id: "", name: "新技能", icon: "wand.and.stars",
+                        def: ActionDef(id: "", name: AppFlavor.text("新技能", "New Action"), icon: "wand.and.stars",
                                        enabled: true, isBuiltin: false, needsLLM: true,
-                                       prompt: "用简洁的简体中文，对下面的文本做……（在这里写你想要的处理方式）"),
+                                       prompt: AppFlavor.text("用简洁的简体中文，对下面的文本做……（在这里写你想要的处理方式）", "In concise natural English, process the selected text as follows...")),
                         isNew: true)
                 } label: {
-                    Label("新增自定义技能（\(store.customCount)/\(ActionStore.maxCustom)）", systemImage: "plus.circle.fill")
+                    Label(AppFlavor.text("新增自定义技能（\(store.customCount)/\(ActionStore.maxCustom)）", "Add Custom Action (\(store.customCount)/\(ActionStore.maxCustom))"), systemImage: "plus.circle.fill")
                 }
                 .disabled(!store.canAddCustom)
 
-                Button("恢复默认技能", role: .destructive) { store.resetToDefaults() }
+                Button(AppFlavor.text("恢复默认技能", "Restore Default Actions"), role: .destructive) { store.resetToDefaults() }
             } footer: {
-                Text("技能快捷键会直接处理当前选中文本。自定义技能会调用大模型，按你的提示词生成内容并念出来。")
+                Text(AppFlavor.text("技能快捷键会直接处理当前选中文本。自定义技能会调用大模型，按你的提示词生成内容并念出来。", "Action hotkeys process the current selection directly. Custom actions call the model with your prompt and read the result aloud."))
             }
         }
         .listStyle(.inset)
@@ -69,17 +69,17 @@ struct ActionsConfigView: View {
             Image(systemName: def.icon).frame(width: 22).foregroundStyle(.secondary)
             Text(def.name)
             if def.isBuiltin {
-                Text("内置").font(.caption2)
+                Text(AppFlavor.text("内置", "Built-in")).font(.caption2)
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(Capsule().fill(Color.primary.opacity(0.08)))
                     .foregroundStyle(.tertiary)
             }
             Spacer()
-            HotkeyRecorder(display: Binding(get: { def.hotKeyDisplay ?? "未设置" }, set: { _ in })) { code, mods, disp in
+            HotkeyRecorder(display: Binding(get: { def.hotKeyDisplay ?? AppFlavor.text("未设置", "Not Set") }, set: { _ in })) { code, mods, disp in
                 store.setHotKey(def.id, code: Int(code), mods: carbonModifiers(mods), display: disp)
             }
             .frame(width: 122, height: 22)
-            .help("设置此技能的全局快捷键")
+            .help(AppFlavor.text("设置此技能的全局快捷键", "Set global hotkey for this action"))
             if def.hotKeyDisplay != nil {
                 Button {
                     store.setHotKey(def.id, code: nil, mods: nil, display: nil)
@@ -88,13 +88,13 @@ struct ActionsConfigView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.tertiary)
-                .help("清除快捷键")
+                .help(AppFlavor.text("清除快捷键", "Clear hotkey"))
             }
-            Button("编辑") { editing = EditTarget(def: def, isNew: false) }
+            Button(AppFlavor.text("编辑", "Edit")) { editing = EditTarget(def: def, isNew: false) }
                 .buttonStyle(.link)
             if !def.isBuiltin {
                 Button { store.delete(def.id) } label: { Image(systemName: "trash") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary).help("删除")
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help(AppFlavor.text("删除", "Delete"))
             }
         }
         .padding(.vertical, 3)
@@ -106,13 +106,13 @@ struct ActionsConfigView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .frame(width: 18)
-                .help("朗读固定第一，不参与排序")
+                .help(AppFlavor.text("朗读固定第一，不参与排序", "Read stays first and cannot be reordered"))
         } else {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
-                .help("拖动排序")
+                .help(AppFlavor.text("拖动排序", "Drag to reorder"))
                 .onDrag {
                     draggingID = def.id
                     return NSItemProvider(object: def.id as NSString)
@@ -157,16 +157,16 @@ private struct ActionEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(target.isNew ? "新增自定义技能" : "编辑技能")
+            Text(target.isNew ? AppFlavor.text("新增自定义技能", "Add Custom Action") : AppFlavor.text("编辑技能", "Edit Action"))
                 .font(.headline)
 
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("名称").font(.caption).foregroundStyle(.secondary)
-                    TextField("如：拆解句法", text: $target.def.name).frame(width: 160)
+                    Text(AppFlavor.text("名称", "Name")).font(.caption).foregroundStyle(.secondary)
+                    TextField(AppFlavor.text("如：拆解句法", "e.g. Sentence Structure"), text: $target.def.name).frame(width: 160)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("图标").font(.caption).foregroundStyle(.secondary)
+                    Text(AppFlavor.text("图标", "Icon")).font(.caption).foregroundStyle(.secondary)
                     Picker("", selection: $target.def.icon) {
                         ForEach(icons, id: \.self) { ic in
                             Image(systemName: ic).tag(ic)
@@ -179,9 +179,9 @@ private struct ActionEditor: View {
             }
 
             HStack(spacing: 10) {
-                Text("快捷键").font(.caption).foregroundStyle(.secondary)
+                Text(AppFlavor.text("快捷键", "Hotkey")).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                HotkeyRecorder(display: Binding(get: { target.def.hotKeyDisplay ?? "未设置" },
+                HotkeyRecorder(display: Binding(get: { target.def.hotKeyDisplay ?? AppFlavor.text("未设置", "Not Set") },
                                                 set: { target.def.hotKeyDisplay = $0 })) { code, mods, disp in
                     target.def.hotKeyCode = Int(code)
                     target.def.hotKeyMods = carbonModifiers(mods)
@@ -189,7 +189,7 @@ private struct ActionEditor: View {
                 }
                 .frame(width: 146, height: 24)
                 if target.def.hotKeyDisplay != nil {
-                    Button("清除") {
+                    Button(AppFlavor.text("清除", "Clear")) {
                         target.def.hotKeyCode = nil
                         target.def.hotKeyMods = nil
                         target.def.hotKeyDisplay = nil
@@ -200,7 +200,7 @@ private struct ActionEditor: View {
             if target.def.needsLLM {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("生成提示词（告诉模型怎么处理选中的文本）")
+                        Text(AppFlavor.text("生成提示词（告诉模型怎么处理选中的文本）", "Generation prompt (tell the model how to process the selected text)"))
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         Button {
@@ -209,12 +209,12 @@ private struct ActionEditor: View {
                             if optimizingPrompt {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Label("AI 优化", systemImage: "wand.and.stars")
+                                Label(AppFlavor.text("AI 优化", "AI Optimize"), systemImage: "wand.and.stars")
                             }
                         }
                         .controlSize(.small)
                         .disabled(optimizingPrompt || target.def.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .help("用当前 DeepSeek 模型优化这个技能提示词")
+                        .help(AppFlavor.text("用当前 DeepSeek 模型优化这个技能提示词", "Optimize this action prompt with the current DeepSeek model"))
                     }
                     TextEditor(text: $target.def.prompt)
                         .font(.system(size: 12))
@@ -226,17 +226,17 @@ private struct ActionEditor: View {
 
             HStack {
                 Spacer()
-                Button("取消") { onCancel() }
-                Button(target.isNew ? "添加" : "保存") { onSave(finalDef()) }
+                Button(AppFlavor.text("取消", "Cancel")) { onCancel() }
+                Button(target.isNew ? AppFlavor.text("添加", "Add") : AppFlavor.text("保存", "Save")) { onSave(finalDef()) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(target.def.name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(20)
         .frame(width: 440)
-        .alert("AI 优化失败", isPresented: Binding(get: { optimizeError != nil },
+        .alert(AppFlavor.text("AI 优化失败", "AI Optimization Failed"), isPresented: Binding(get: { optimizeError != nil },
                                               set: { if !$0 { optimizeError = nil } })) {
-            Button("好") { optimizeError = nil }
+            Button(AppFlavor.text("好", "OK")) { optimizeError = nil }
         } message: {
             Text(optimizeError ?? "")
         }
@@ -254,7 +254,7 @@ private struct ActionEditor: View {
         let current = target.def.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !current.isEmpty else { return }
         guard !Settings.deepseekKey.isEmpty else {
-            optimizeError = "请先在设置里填写 DeepSeek API Key。"
+            optimizeError = AppFlavor.text("请先在设置里填写 DeepSeek API Key。", "Add your DeepSeek API Key in Settings first.")
             return
         }
 
@@ -264,14 +264,14 @@ private struct ActionEditor: View {
         do {
             let optimized = try await LLMClient.complete(prompt: Self.promptOptimizerSystemPrompt,
                                                         text: """
-                                                        技能名称：\(name.isEmpty ? "未命名技能" : name)
+                                                        \(AppFlavor.text("技能名称", "Action name"))：\(name.isEmpty ? AppFlavor.text("未命名技能", "Unnamed action") : name)
 
-                                                        当前提示词：
+                                                        \(AppFlavor.text("当前提示词", "Current prompt"))：
                                                         \(current)
                                                         """)
             let cleaned = cleanOptimizedPrompt(optimized)
             guard !cleaned.isEmpty else {
-                optimizeError = "模型没有返回可用的提示词。"
+                optimizeError = AppFlavor.text("模型没有返回可用的提示词。", "The model did not return a usable prompt.")
                 return
             }
             target.def.prompt = cleaned
@@ -287,25 +287,41 @@ private struct ActionEditor: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static let promptOptimizerSystemPrompt = """
-    你是「过耳不忘」的技能提示词优化器。你的任务是把用户现有的技能提示词改写得更清晰、稳定、适合处理被选中的文本。
+    private static var promptOptimizerSystemPrompt: String {
+        AppFlavor.text(
+            """
+            你是「过耳不忘」的技能提示词优化器。你的任务是把用户现有的技能提示词改写得更清晰、稳定、适合处理被选中的文本。
 
-    优化原则：
-    保留原意，不新增用户没有要求的任务。
-    明确模型应该如何处理「选中内容」。
-    如果任务可能使用全文上下文，要说明全文上下文只作为理解选中内容的参考，除非任务本身要求概括全文。
-    输出应适合后续语音朗读：要求模型返回自然口语化纯文本，不要 Markdown、表格、列表符号或多余客套。
-    提示词要简洁但足够明确，通常一段话即可。
+            优化原则：
+            保留原意，不新增用户没有要求的任务。
+            明确模型应该如何处理「选中内容」。
+            如果任务可能使用全文上下文，要说明全文上下文只作为理解选中内容的参考，除非任务本身要求概括全文。
+            输出应适合后续语音朗读：要求模型返回自然口语化纯文本，不要 Markdown、表格、列表符号或多余客套。
+            提示词要简洁但足够明确，通常一段话即可。
 
-    只输出优化后的提示词本身，不要解释，不要加标题。
-    """
+            只输出优化后的提示词本身，不要解释，不要加标题。
+            """,
+            """
+            You are the ListenMark action prompt optimizer. Rewrite the user's existing prompt so it is clearer, more reliable, and well suited for processing selected text.
+
+            Principles:
+            Preserve the user's original intent and do not add new tasks.
+            Make it explicit how the model should handle the selected text.
+            If full-text context may be provided, say it is only reference material for understanding the selection unless the action explicitly asks for full-document summarization.
+            The model's answer will be spoken aloud, so require natural plain text with no Markdown, tables, bullet symbols, or unnecessary pleasantries.
+            Keep the prompt concise but specific, usually one paragraph.
+
+            Output only the optimized prompt itself. Do not explain and do not add a title.
+            """
+        )
+    }
 
     private static func describe(_ error: Error) -> String {
         if let e = error as? LLMError {
             switch e {
-            case .noKey: return "请先在设置里填写 DeepSeek API Key。"
-            case .http(let code, let msg): return "DeepSeek 请求失败：HTTP \(code) \(msg.prefix(120))"
-            case .badResponse: return "DeepSeek 响应解析失败。"
+            case .noKey: return AppFlavor.text("请先在设置里填写 DeepSeek API Key。", "Add your DeepSeek API Key in Settings first.")
+            case .http(let code, let msg): return AppFlavor.text("DeepSeek 请求失败：HTTP \(code) \(msg.prefix(120))", "DeepSeek request failed: HTTP \(code) \(msg.prefix(120))")
+            case .badResponse: return AppFlavor.text("DeepSeek 响应解析失败。", "Could not parse the DeepSeek response.")
             }
         }
         return error.localizedDescription

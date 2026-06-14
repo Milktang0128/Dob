@@ -35,13 +35,13 @@ struct ReviewView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("今日回响").font(.system(size: 17, weight: .semibold))
-                Text(items.isEmpty ? "把听过的内容再过一遍耳朵" : "把这 \(items.count) 条再过一遍耳朵")
+                Text(AppFlavor.text("今日回响", "Review")).font(.system(size: 17, weight: .semibold))
+                Text(items.isEmpty ? AppFlavor.text("把听过的内容再过一遍耳朵", "Replay what you have saved") : AppFlavor.text("把这 \(items.count) 条再过一遍耳朵", "Replay these \(items.count) items"))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Spacer()
             if !items.isEmpty {
-                Button { playAll() } label: { Label("全部回响", systemImage: "play.circle.fill") }
+                Button { playAll() } label: { Label(AppFlavor.text("全部回响", "Play All"), systemImage: "play.circle.fill") }
                     .buttonStyle(.borderedProminent)
             }
         }
@@ -51,10 +51,10 @@ struct ReviewView: View {
     private var empty: some View {
         VStack(spacing: 12) {
             Image(systemName: "checkmark.circle").font(.system(size: 32)).foregroundStyle(.green.opacity(0.7))
-            Text(store.entries.isEmpty ? "还没有可回响的内容\n先去听点东西、留个档" : "今天没有需要回响的内容 🎉")
+            Text(store.entries.isEmpty ? AppFlavor.text("还没有可回响的内容\n先去听点东西、留个档", "Nothing to review yet\nSave something after listening") : AppFlavor.text("今天没有需要回响的内容", "Nothing due today"))
                 .multilineTextAlignment(.center).font(.system(size: 13)).foregroundStyle(.secondary)
             if !store.entries.isEmpty {
-                Button("现在回响最旧的几条") { items = store.oldestForReview() }
+                Button(AppFlavor.text("现在回响最旧的几条", "Review Oldest Now")) { items = store.oldestForReview() }
                     .buttonStyle(.bordered)
             }
         }
@@ -109,7 +109,7 @@ private struct ReviewCard: View {
                 Text(entry.sourceApp).font(.system(size: 11)).foregroundStyle(.secondary)
                 Text(Self.df.string(from: entry.date)).font(.system(size: 11)).foregroundStyle(.tertiary)
                 if done {
-                    Label("已回响", systemImage: "checkmark.circle.fill")
+                    Label(AppFlavor.text("已回响", "Reviewed"), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 10)).foregroundStyle(.green)
                 }
                 Spacer()
@@ -124,9 +124,9 @@ private struct ReviewCard: View {
             }
 
             HStack(spacing: 8) {
-                Button { onPlay() } label: { Label("重听", systemImage: "play.fill") }
+                Button { onPlay() } label: { Label(AppFlavor.text("重听", "Replay"), systemImage: "play.fill") }
                     .buttonStyle(.borderedProminent)
-                Button { onMaster() } label: { Label("已掌握", systemImage: "checkmark.seal") }
+                Button { onMaster() } label: { Label(AppFlavor.text("已掌握", "Mastered"), systemImage: "checkmark.seal") }
                     .buttonStyle(.bordered).tint(.green)
                 Spacer()
             }

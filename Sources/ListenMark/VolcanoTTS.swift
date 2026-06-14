@@ -9,25 +9,25 @@ struct VolcanoVoice: Identifiable {
 /// 账号需在火山控制台开通对应音色；也可在设置里手填任意 voice_type。
 enum VolcanoVoices {
     static let all: [VolcanoVoice] = [
-        .init(id: "zh_female_cancan_uranus_bigtts", name: "灿灿 · 知性女声"),
-        .init(id: "zh_female_shuangkuaisisi_uranus_bigtts", name: "爽快思思"),
-        .init(id: "zh_female_qingxinnvsheng_uranus_bigtts", name: "清新女声"),
-        .init(id: "zh_female_wenrouxiaoya_uranus_bigtts", name: "温柔小雅"),
-        .init(id: "zh_female_tianmeitaozi_uranus_bigtts", name: "甜美桃子"),
-        .init(id: "zh_female_linjianvhai_uranus_bigtts", name: "邻家女孩"),
-        .init(id: "zh_female_gaolengyujie_uranus_bigtts", name: "高冷御姐"),
-        .init(id: "zh_female_vv_uranus_bigtts", name: "Vivi · 多语种(中日西)"),
-        .init(id: "zh_male_wennuanahu_uranus_bigtts", name: "温暖阿虎 / Alvin"),
-        .init(id: "zh_male_shaonianzixin_uranus_bigtts", name: "少年梓辛 / Brayan"),
-        .init(id: "zh_male_yuanboxiaoshu_uranus_bigtts", name: "渊博小叔"),
-        .init(id: "zh_male_yangguangqingnian_uranus_bigtts", name: "阳光青年"),
-        .init(id: "zh_male_ruyaqingnian_uranus_bigtts", name: "儒雅青年"),
-        .init(id: "zh_male_cixingjieshuonan_uranus_bigtts", name: "磁性解说 / Morgan"),
-        .init(id: "zh_male_shenyeboke_uranus_bigtts", name: "深夜播客"),
-        .init(id: "zh_male_xuanyijieshuo_uranus_bigtts", name: "悬疑解说"),
-        .init(id: "zh_female_yingyujiaoxue_uranus_bigtts", name: "Tina 老师 · 中英"),
-        .init(id: "en_male_tim_uranus_bigtts", name: "Tim · 美式英语"),
-        .init(id: "en_female_dacey_uranus_bigtts", name: "Dacey · 美式英语")
+        .init(id: "zh_female_cancan_uranus_bigtts", name: AppFlavor.text("灿灿 · 知性女声", "Cancang · Chinese female")),
+        .init(id: "zh_female_shuangkuaisisi_uranus_bigtts", name: AppFlavor.text("爽快思思", "Sisi · Chinese female")),
+        .init(id: "zh_female_qingxinnvsheng_uranus_bigtts", name: AppFlavor.text("清新女声", "Fresh Chinese female")),
+        .init(id: "zh_female_wenrouxiaoya_uranus_bigtts", name: AppFlavor.text("温柔小雅", "Xiaoya · gentle Chinese female")),
+        .init(id: "zh_female_tianmeitaozi_uranus_bigtts", name: AppFlavor.text("甜美桃子", "Taozi · sweet Chinese female")),
+        .init(id: "zh_female_linjianvhai_uranus_bigtts", name: AppFlavor.text("邻家女孩", "Neighbor girl · Chinese female")),
+        .init(id: "zh_female_gaolengyujie_uranus_bigtts", name: AppFlavor.text("高冷御姐", "Cool mature Chinese female")),
+        .init(id: "zh_female_vv_uranus_bigtts", name: AppFlavor.text("Vivi · 多语种(中日西)", "Vivi · multilingual")),
+        .init(id: "zh_male_wennuanahu_uranus_bigtts", name: AppFlavor.text("温暖阿虎 / Alvin", "Alvin · warm Chinese male")),
+        .init(id: "zh_male_shaonianzixin_uranus_bigtts", name: AppFlavor.text("少年梓辛 / Brayan", "Brayan · young Chinese male")),
+        .init(id: "zh_male_yuanboxiaoshu_uranus_bigtts", name: AppFlavor.text("渊博小叔", "Knowledgeable Chinese male")),
+        .init(id: "zh_male_yangguangqingnian_uranus_bigtts", name: AppFlavor.text("阳光青年", "Bright Chinese male")),
+        .init(id: "zh_male_ruyaqingnian_uranus_bigtts", name: AppFlavor.text("儒雅青年", "Refined Chinese male")),
+        .init(id: "zh_male_cixingjieshuonan_uranus_bigtts", name: AppFlavor.text("磁性解说 / Morgan", "Morgan · narrator")),
+        .init(id: "zh_male_shenyeboke_uranus_bigtts", name: AppFlavor.text("深夜播客", "Late-night podcast male")),
+        .init(id: "zh_male_xuanyijieshuo_uranus_bigtts", name: AppFlavor.text("悬疑解说", "Suspense narrator")),
+        .init(id: "zh_female_yingyujiaoxue_uranus_bigtts", name: AppFlavor.text("Tina 老师 · 中英", "Tina · Chinese and English")),
+        .init(id: "en_male_tim_uranus_bigtts", name: AppFlavor.text("Tim · 美式英语", "Tim · American English")),
+        .init(id: "en_female_dacey_uranus_bigtts", name: AppFlavor.text("Dacey · 美式英语", "Dacey · American English"))
     ]
 }
 
@@ -84,7 +84,7 @@ enum VolcanoTTS {
         guard code == 3000,
               let b64 = obj["data"] as? String,
               let audio = Data(base64Encoded: b64) else {
-            throw VolcanoTTSError.api(code, (obj["message"] as? String) ?? "未知错误")
+            throw VolcanoTTSError.api(code, (obj["message"] as? String) ?? AppFlavor.text("未知错误", "Unknown error"))
         }
         return audio
     }

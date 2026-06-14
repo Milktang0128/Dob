@@ -15,7 +15,7 @@ final class ArchiveStore: ObservableObject {
     init() {
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ListenMark", isDirectory: true)
+            .appendingPathComponent(AppFlavor.supportFolderName, isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         internalFolder = base
         jsonURL = base.appendingPathComponent("archive.json")
@@ -26,9 +26,9 @@ final class ArchiveStore: ObservableObject {
     var markdownURL: URL {
         let folder = Settings.archiveFolder
         if !folder.isEmpty {
-            return URL(fileURLWithPath: folder, isDirectory: true).appendingPathComponent("ListenMark.md")
+            return URL(fileURLWithPath: folder, isDirectory: true).appendingPathComponent("\(AppFlavor.appName).md")
         }
-        return internalFolder.appendingPathComponent("ListenMark.md")
+        return internalFolder.appendingPathComponent("\(AppFlavor.appName).md")
     }
 
     var revealFolder: URL {
@@ -102,16 +102,16 @@ final class ArchiveStore: ObservableObject {
     private func exportMarkdown() {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm"
-        var md = "# 过耳不忘 · 档案\n\n"
+        var md = "# \(AppFlavor.text("过耳不忘 · 档案", "ListenMark Archive"))\n\n"
         for e in entries {
             md += "## \(e.action) · \(df.string(from: e.date)) · \(e.sourceApp)\n\n"
             if e.contextUsed == true {
-                md += "_已附带上下文_\n\n"
+                md += "_\(AppFlavor.text("已附带上下文", "Context included"))_\n\n"
             }
             md += "> \(e.original.replacingOccurrences(of: "\n", with: "\n> "))\n\n"
             if let r = e.response, !r.isEmpty { md += "\(r)\n\n" }
             if let context = e.contextExcerpt, !context.isEmpty {
-                md += "<details>\n<summary>上下文摘录</summary>\n\n"
+                md += "<details>\n<summary>\(AppFlavor.text("上下文摘录", "Context excerpt"))</summary>\n\n"
                 md += "```text\n\(context)\n```\n\n"
                 md += "</details>\n\n"
             }
