@@ -1,184 +1,235 @@
 import SwiftUI
-import AVFoundation
 
 struct SettingsView: View {
-    private static var volcanoVoiceListURL: URL {
-        URL(string: AppFlavor.text("https://www.volcengine.com/docs/6561/1257544?lang=zh",
-                                   "https://www.volcengine.com/docs/6561/1257544"))!
-    }
-
     @AppStorage("autoPop") private var autoPop = true
+    @AppStorage("autoPopCopyFallback") private var autoPopCopyFallback = true
     @AppStorage("hkDisplay") private var hkDisplay = "⌥⌘R"
     @AppStorage("ocrHkDisplay") private var ocrHkDisplay = "⌃⇧O"
+    @AppStorage("silentOcrHkDisplay") private var silentOcrHkDisplay = "⌃⇧C"
+    @AppStorage("inputHkDisplay") private var inputHkDisplay = "⌃⇧I"
+    @AppStorage("ocrAutoRunLastAction") private var ocrAutoRunLastAction = true
+
+    @AppStorage("useFullContext") private var useFullContext = true
+    @AppStorage("autoSpeakAI") private var autoSpeakAI = true
     @AppStorage("autoArchive") private var autoArchive = false
+    @AppStorage("historyEnabled") private var historyEnabled = true
     @AppStorage("archiveFolder") private var archiveFolder = ""
 
-    @AppStorage("llmBaseURL") private var llmBaseURL = Settings.recommendedLLMBaseURL
     @AppStorage("deepseekKey") private var llmAPIKey = ""
     @AppStorage("deepseekModel") private var llmModel = Settings.recommendedLLMModel
-    @AppStorage("useFullContext") private var useFullContext = true
-
+    @AppStorage("compareProvider1Enabled") private var compareProvider1Enabled = false
+    @AppStorage("compareProvider2Enabled") private var compareProvider2Enabled = false
     @AppStorage("ttsEngine") private var ttsEngine = AppFlavor.text("volcano", "local")
     @AppStorage("volcAppId") private var volcAppId = ""
     @AppStorage("volcToken") private var volcToken = ""
-    @AppStorage("volcCluster") private var volcCluster = "volcano_tts"
-    @AppStorage("volcVoice") private var volcVoice = AppFlavor.text("zh_female_cancan_uranus_bigtts", "en_female_dacey_uranus_bigtts")
-    @AppStorage("volcSpeed") private var volcSpeed = 1.0
-    @AppStorage("rate") private var rate = Double(AVSpeechUtteranceDefaultSpeechRate)
 
-    private var volcUnconfigured: Bool {
-        ttsEngine == "volcano" && (volcAppId.isEmpty || volcToken.isEmpty)
+    private var compareCount: Int {
+        (compareProvider1Enabled ? 1 : 0) + (compareProvider2Enabled ? 1 : 0)
+    }
+
+    private var speechStatus: String {
+        if ttsEngine == "local" { return AppFlavor.text("本地语音", "Local Speech") }
+        let configured = !volcAppId.isEmpty && !volcToken.isEmpty
+        return configured ? AppFlavor.text("火山引擎", "Volcengine") : AppFlavor.text("火山未配置，回退本地", "Volcengine missing, falls back")
     }
 
     var body: some View {
-        Form {
-            Section(AppFlavor.text("触发方式", "Triggers")) {
-                Toggle(AppFlavor.text("划词后自动弹出（推荐）", "Show panel after text selection (recommended)"), isOn: $autoPop)
-                    .onChange(of: autoPop) { _, _ in
-                        NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
-                    }
-                HStack {
-                    Text(AppFlavor.text("弹出面板快捷键", "Panel hotkey"))
-                    Spacer()
-                    HotkeyRecorder(display: $hkDisplay) { code, mods, disp in
-                        Settings.hotKeyCode = Int(code)
-                        Settings.hotKeyMods = carbonModifiers(mods)
-                        Settings.hotKeyDisplay = disp
-                        hkDisplay = disp
-                        NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
-                    }
-                    .frame(width: 176, height: 22)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                quickLinks
+                captureSection
+                fallbackSection
+                behaviorSection
+                actionsSection
+                archiveSection
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: 540)
+        .frame(minHeight: 660)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(AppFlavor.text("设置", "Settings"))
+                .font(.system(size: 24, weight: .semibold))
+            Text(AppFlavor.text("这里管理使用偏好和工作流。模型、OCR、语音等供应商配置集中放在服务管理中。",
+                                "Manage preferences and workflows here. Model, OCR, and speech providers live in Services."))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var quickLinks: some View {
+        SettingsSection(title: AppFlavor.text("核心入口", "Core Entrypoints"),
+                        subtitle: AppFlavor.text("高频配置尽量保持在单独窗口，避免一个设置页承担所有事情。",
+                                                 "High-impact configuration stays in dedicated windows so this page remains focused.")) {
+            HStack(spacing: 10) {
+                SettingsNavButton(title: AppFlavor.text("服务管理", "Services"),
+                                  subtitle: serviceSummary,
+                                  icon: "server.rack") {
+                    NotificationCenter.default.post(name: .gebwOpenServices, object: nil)
+                }
+                SettingsNavButton(title: AppFlavor.text("编辑技能", "Edit Actions"),
+                                  subtitle: AppFlavor.text("排序、快捷键、提示词", "Order, hotkeys, prompts"),
+                                  icon: "slider.horizontal.3") {
+                    NotificationCenter.default.post(name: .gebwOpenActions, object: nil)
                 }
             }
+        }
+    }
 
-            Section(AppFlavor.text("高级取词", "Fallback Capture")) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(AppFlavor.text("屏幕选框 OCR", "Screen selection OCR"))
-                        Text(AppFlavor.text("无法直接取词时，按快捷键框选屏幕区域，识别出的文字会进入同一个处理面板。", "When direct text capture fails, press the hotkey and drag a screen region. Recognized text opens in the same action panel."))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    HotkeyRecorder(display: $ocrHkDisplay) { code, mods, disp in
-                        Settings.ocrHotKeyCode = Int(code)
-                        Settings.ocrHotKeyMods = carbonModifiers(mods)
-                        Settings.ocrHotKeyDisplay = disp
-                        ocrHkDisplay = disp
-                        NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
-                    }
-                    .frame(width: 176, height: 22)
+    private var captureSection: some View {
+        SettingsSection(title: AppFlavor.text("触发与自动弹出", "Trigger and Auto-Pop"),
+                        subtitle: AppFlavor.text("决定工具条何时出现，以及取词失败时是否启用兼容方案。",
+                                                 "Controls when the panel appears and whether compatibility capture is allowed.")) {
+            SettingToggle(title: AppFlavor.text("划词后自动弹出", "Show after selection"),
+                          subtitle: AppFlavor.text("选中文本后自动显示工具条。", "Show the panel automatically after selecting text."),
+                          isOn: $autoPop) {
+                NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+            }
+            SettingToggle(title: AppFlavor.text("兼容模式：临时复制取词", "Compatibility mode: temporary copy"),
+                          subtitle: AppFlavor.text("用于微信内置浏览器等不暴露标准选区的界面。会尽量恢复原剪贴板。",
+                                                   "Helps in WebViews that do not expose standard selection. The clipboard is restored when possible."),
+                          isOn: $autoPopCopyFallback)
+                .disabled(!autoPop)
+            HotkeySetting(title: AppFlavor.text("弹出工具条", "Show panel"),
+                          subtitle: AppFlavor.text("手动处理当前选中文本。", "Manually process the current selection."),
+                          display: $hkDisplay) { code, mods, disp in
+                Settings.hotKeyCode = Int(code)
+                Settings.hotKeyMods = carbonModifiers(mods)
+                Settings.hotKeyDisplay = disp
+                hkDisplay = disp
+                NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+            }
+        }
+    }
+
+    private var fallbackSection: some View {
+        SettingsSection(title: AppFlavor.text("输入与 OCR 兜底", "Input and OCR Fallbacks"),
+                        subtitle: AppFlavor.text("处理无法直接取词、无法复制、或想手动输入内容的场景。",
+                                                 "For apps where direct capture fails, copying is blocked, or you want to type manually.")) {
+            HotkeySetting(title: AppFlavor.text("输入面板", "Input panel"),
+                          subtitle: AppFlavor.text("打开工具条和文本框，可粘贴或输入任意内容再处理。",
+                                                   "Open the toolbar with a text box, then paste or type any text."),
+                          display: $inputHkDisplay) { code, mods, disp in
+                Settings.inputHotKeyCode = Int(code)
+                Settings.inputHotKeyMods = carbonModifiers(mods)
+                Settings.inputHotKeyDisplay = disp
+                inputHkDisplay = disp
+                NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+            }
+            HotkeySetting(title: AppFlavor.text("屏幕选框 OCR", "Screen selection OCR"),
+                          subtitle: AppFlavor.text("框选屏幕区域识别文字，识别后打开工具条。",
+                                                   "Select a screen region for OCR, then open the panel."),
+                          display: $ocrHkDisplay) { code, mods, disp in
+                Settings.ocrHotKeyCode = Int(code)
+                Settings.ocrHotKeyMods = carbonModifiers(mods)
+                Settings.ocrHotKeyDisplay = disp
+                ocrHkDisplay = disp
+                NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+            }
+            SettingToggle(title: AppFlavor.text("OCR 后执行最近一次技能", "Run last action after OCR"),
+                          subtitle: AppFlavor.text("适合连续 OCR 翻译、解释或朗读。", "Useful for repeated OCR translate, explain, or read flows."),
+                          isOn: $ocrAutoRunLastAction)
+            HotkeySetting(title: AppFlavor.text("静默 OCR 复制", "Silent OCR copy"),
+                          subtitle: AppFlavor.text("框选后直接复制识别结果，不显示工具条。", "Copy recognized text directly without showing the panel."),
+                          display: $silentOcrHkDisplay) { code, mods, disp in
+                Settings.silentOCRHotKeyCode = Int(code)
+                Settings.silentOCRHotKeyMods = carbonModifiers(mods)
+                Settings.silentOCRHotKeyDisplay = disp
+                silentOcrHkDisplay = disp
+                NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+            }
+        }
+    }
+
+    private var behaviorSection: some View {
+        SettingsSection(title: AppFlavor.text("结果行为", "Result Behavior"),
+                        subtitle: AppFlavor.text("控制 AI 技能如何使用上下文，以及生成后是否自动朗读。",
+                                                 "Controls context use and whether AI results are spoken automatically.")) {
+            SettingToggle(title: AppFlavor.text("默认使用全文上下文", "Use full-text context by default"),
+                          subtitle: AppFlavor.text("能拿到全文时，把选中内容和上下文一起交给模型；拿不到时自动回退。",
+                                                   "When available, send both selection and surrounding context to the model; otherwise fall back."),
+                          isOn: $useFullContext)
+            SettingToggle(title: AppFlavor.text("AI 技能完成后自动朗读", "Auto-read AI results"),
+                          subtitle: AppFlavor.text("关闭后，解释、翻译、提炼等结果默认只显示不朗读；朗读技能不受影响。",
+                                                   "When off, Explain, Translate, and similar results show without speaking. Read is unaffected."),
+                          isOn: $autoSpeakAI)
+        }
+    }
+
+    private var actionsSection: some View {
+        SettingsSection(title: AppFlavor.text("技能", "Actions"),
+                        subtitle: AppFlavor.text("技能是工具条上的具体动作；服务是它们调用的底层能力。",
+                                                 "Actions are toolbar commands; services are the underlying providers they use.")) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(AppFlavor.text("朗读固定第一，其它技能可排序、禁用、设置快捷键或编辑提示词。",
+                                        "Read stays first. Other actions can be reordered, disabled, given hotkeys, or edited."))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(AppFlavor.text("浮窗显示前 5 个启用技能，其余收进更多菜单。",
+                                        "The panel shows the first 5 enabled actions; the rest move into More."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(AppFlavor.text("编辑…", "Edit…")) {
+                    NotificationCenter.default.post(name: .gebwOpenActions, object: nil)
                 }
             }
+        }
+    }
 
-            Section(AppFlavor.text("留档", "Saving")) {
-                Toggle(AppFlavor.text("自动留档（每次动作都保存）", "Auto-save every action"), isOn: $autoArchive)
-                Text(AppFlavor.text("默认关闭——结果卡上点「留档」才保存。", "Off by default. Use Save on the result card when you want to keep something."))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section(AppFlavor.text("留存位置（可读 Markdown）", "Archive Location (Readable Markdown)")) {
+    private var archiveSection: some View {
+        SettingsSection(title: AppFlavor.text("留档与历史", "Archive and History"),
+                        subtitle: AppFlavor.text("主动留档适合长期复习；静默历史适合临时回看。",
+                                                 "Archive is for long-term review; silent history is for lightweight lookup.")) {
+            SettingToggle(title: AppFlavor.text("自动留档每次动作", "Auto-save every action"),
+                          subtitle: AppFlavor.text("默认关闭。通常点击结果卡上的留档更可控。", "Off by default. Saving from the result card is usually more deliberate."),
+                          isOn: $autoArchive)
+            SettingToggle(title: AppFlavor.text("静默历史记录最近 500 条", "Silent history, latest 500"),
+                          subtitle: AppFlavor.text("保存原文、结果、动作和来源，不保存全文上下文，也不参与今日回响。",
+                                                   "Stores source text, result, action, and app only. No full context and no Review scheduling."),
+                          isOn: $historyEnabled)
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text(AppFlavor.text("Markdown 留存位置", "Markdown archive location"))
+                    .font(.system(size: 13, weight: .semibold))
                 HStack {
-                    Text(archiveFolder.isEmpty ? AppFlavor.text("默认（应用支持目录）", "Default (Application Support)") : archiveFolder)
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .lineLimit(1).truncationMode(.middle)
+                    Text(archiveFolder.isEmpty ? AppFlavor.text("默认：应用支持目录", "Default: Application Support") : archiveFolder)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     Spacer()
                     Button(AppFlavor.text("选择…", "Choose…")) { pickFolder() }
                 }
                 HStack {
-                    Button(AppFlavor.text("在访达中显示", "Show in Finder")) { NSWorkspace.shared.open(ArchiveStore.shared.revealFolder) }
+                    Button(AppFlavor.text("在访达中显示", "Show in Finder")) {
+                        NSWorkspace.shared.open(ArchiveStore.shared.revealFolder)
+                    }
                     if !archiveFolder.isEmpty {
-                        Button(AppFlavor.text("用默认", "Use Default")) { archiveFolder = ""; ArchiveStore.shared.relocate() }
-                    }
-                }
-                Text(AppFlavor.text("可读的档案 Markdown 会写到这里——放进 Obsidian 库即可随时查看、供后续 agent 管理。", "Readable Markdown is written here, so you can keep it in Obsidian or any folder you want to review later."))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section(AppFlavor.text("技能", "Actions")) {
-                HStack {
-                    Text(AppFlavor.text("排序、设置快捷键、禁用、或新增最多 4 个自定义技能。技能快捷键会直接处理当前选中文本。", "Reorder, set hotkeys, disable actions, or add up to 4 custom actions. Action hotkeys process the current selection directly."))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(AppFlavor.text("编辑技能…", "Edit Actions…")) {
-                        NotificationCenter.default.post(name: .gebwOpenActions, object: nil)
-                    }
-                }
-                Text(AppFlavor.text("朗读固定在第一位；浮窗显示前 5 个启用技能，其余收在更多菜单。", "Read stays first. The floating panel shows the first 5 enabled actions; the rest live in the More menu."))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section(AppFlavor.text("AI 模型（OpenAI 兼容）", "AI Model (OpenAI-compatible)")) {
-                Toggle(AppFlavor.text("默认使用全文上下文", "Use full-text context by default"), isOn: $useFullContext)
-                Text(AppFlavor.text("开启后，解释、翻译、提炼、背景和自定义技能会尽量读取当前文本控件或页面的可访问上下文，只把它作为选中内容的参考；拿不到时自动回退。", "When enabled, AI actions try to read accessible surrounding text and use it only as context for the selected text. If context is unavailable, they fall back automatically."))
-                    .font(.caption).foregroundStyle(.secondary)
-                TextField(AppFlavor.text("Base URL，例如 https://api.deepseek.com", "Base URL, e.g. https://api.deepseek.com"), text: $llmBaseURL)
-                SecureField(AppFlavor.text("API Key（Bearer Token）", "API Key (Bearer token)"), text: $llmAPIKey)
-                TextField(AppFlavor.text("模型", "Model"), text: $llmModel)
-                Text(AppFlavor.text("默认预填 DeepSeek 推荐配置：Base URL 为 https://api.deepseek.com，模型为 deepseek-v4-flash。也可填写任何 OpenAI 兼容接口的 Base URL，例如以 /v1 结尾的服务；若直接填到 /chat/completions，也会按完整地址使用。", "DeepSeek is prefilled as the recommended default: Base URL https://api.deepseek.com and model deepseek-v4-flash. You can use any OpenAI-compatible Base URL, including /v1 endpoints; a full /chat/completions URL is also accepted."))
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Link(AppFlavor.text("前往 DeepSeek 获取 API Key ↗", "Get a DeepSeek API Key ↗"), destination: URL(string: "https://platform.deepseek.com/api_keys")!)
-                        .font(.caption)
-                    Spacer()
-                    Button(AppFlavor.text("恢复 DeepSeek 推荐", "Use DeepSeek Defaults")) {
-                        llmBaseURL = Settings.recommendedLLMBaseURL
-                        llmModel = Settings.recommendedLLMModel
-                    }
-                }
-            }
-
-            Section(AppFlavor.text("语音合成", "Text-to-Speech")) {
-                Picker(AppFlavor.text("引擎", "Engine"), selection: $ttsEngine) {
-                    Text(AppFlavor.text("火山引擎 · 推荐", "Volcengine")).tag("volcano")
-                    Text(AppFlavor.text("本地（macOS）", "Local (macOS)")).tag("local")
-                }
-                .pickerStyle(.segmented)
-
-                if ttsEngine == "volcano" {
-                    Link(AppFlavor.text("没有账号？前往火山引擎语音控制台开通、获取 App ID / Token ↗", "Open the Volcengine speech console to get App ID / Token ↗"),
-                         destination: URL(string: "https://console.volcengine.com/speech/app")!)
-                        .font(.caption)
-                    SecureField("App ID", text: $volcAppId)
-                    SecureField("Access Token", text: $volcToken)
-                    Picker(AppFlavor.text("音色", "Voice"), selection: $volcVoice) {
-                        ForEach(VolcanoVoices.all) { voice in
-                            Text(voice.name).tag(voice.id)
-                        }
-                        if !VolcanoVoices.all.contains(where: { $0.id == volcVoice }) {
-                            Text(AppFlavor.text("自定义（\(volcVoice)）", "Custom (\(volcVoice))")).tag(volcVoice)
+                        Button(AppFlavor.text("用默认", "Use Default")) {
+                            archiveFolder = ""
+                            ArchiveStore.shared.relocate()
                         }
                     }
-                    Link(AppFlavor.text("查看官方完整音色列表，复制 voice_type 填到下方 ↗", "Open the full official voice list and copy voice_type below ↗"),
-                         destination: Self.volcanoVoiceListURL)
-                        .font(.caption)
-                    TextField(AppFlavor.text("自定义 voice_type（可选）", "Custom voice_type (optional)"), text: $volcVoice)
-                    TextField("Cluster", text: $volcCluster)
-                    HStack {
-                        Text(AppFlavor.text("语速", "Speed"))
-                        Slider(value: $volcSpeed, in: 0.5...2.0)
-                        Text(String(format: "%.1fx", volcSpeed)).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if volcUnconfigured {
-                        Text(AppFlavor.text("未填 App ID / Access Token，暂时回退本地语音。", "App ID or Access Token is missing, so local macOS speech is used for now."))
-                            .font(.caption).foregroundStyle(.orange)
-                    }
-                    Text(AppFlavor.text("音色需在火山控制台开通；下拉只列常用大模型音色，完整列表以官方文档为准。", "Voices must be enabled in the Volcengine console. The picker lists common voices; the official documentation is the source of truth."))
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    HStack {
-                        Text(AppFlavor.text("本地语速", "Local speed"))
-                        Slider(value: $rate, in: 0.3...0.7)
-                    }
-                }
-
-                Button(AppFlavor.text("试听", "Test Voice")) {
-                    Settings.speechRate = Float(rate)
-                    Speaker.shared.speak(AppFlavor.text("过耳不忘，这是当前语音的试听效果。", "ListenMark. This is how the current voice sounds."))
                 }
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 470, height: 620)
+    }
+
+    private var serviceSummary: String {
+        let ai = llmAPIKey.isEmpty ? AppFlavor.text("AI 未配置", "AI missing") : AppFlavor.text("AI 已配置", "AI ready")
+        let compare = compareCount == 0 ? AppFlavor.text("无比较模型", "No compare") : AppFlavor.text("\(compareCount) 个比较模型", "\(compareCount) compare")
+        return "\(ai) · \(compare) · \(speechStatus)"
     }
 
     private func pickFolder() {
@@ -190,6 +241,122 @@ struct SettingsView: View {
         if panel.runModal() == .OK, let url = panel.url {
             archiveFolder = url.path
             ArchiveStore.shared.relocate()
+        }
+    }
+}
+
+private struct SettingsSection<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let content: Content
+
+    init(title: String, subtitle: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.subtitle = subtitle
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                content
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.035)))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+        }
+    }
+}
+
+private struct SettingsNavButton: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.04)))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SettingToggle: View {
+    let title: String
+    let subtitle: String
+    @Binding var isOn: Bool
+    var onChange: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .onChange(of: isOn) { _, _ in onChange?() }
+        }
+    }
+}
+
+private struct HotkeySetting: View {
+    let title: String
+    let subtitle: String
+    @Binding var display: String
+    var onRecord: (UInt16, NSEvent.ModifierFlags, String) -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            HotkeyRecorder(display: $display, onRecord: onRecord)
+                .frame(width: 176, height: 22)
         }
     }
 }

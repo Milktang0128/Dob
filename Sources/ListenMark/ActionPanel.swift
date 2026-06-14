@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import Carbon.HIToolbox
 
 /// Floating, non-activating popup near the cursor. The toolbar row is a fixed
 /// slim height; the panel only grows downward (anchored at its top edge) to a
@@ -9,6 +10,7 @@ final class ActionPanel: NSPanel {
     let model = PanelModel()
 
     private var cancellable: AnyCancellable?
+    private var keyMonitor: Any?
     private let minPanelWidth: CGFloat = 320
     private let barHeight: CGFloat = 40
     private var currentWidth: CGFloat = 320
@@ -35,6 +37,16 @@ final class ActionPanel: NSPanel {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] phase in self?.resize(for: phase) }
+
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard self.isVisible, event.window === self || self.isKeyWindow else { return event }
+            return self.handleKeyDown(event) ? nil : event
+        }
+    }
+
+    deinit {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
     }
 
     override var canBecomeKey: Bool { true }
@@ -42,22 +54,43 @@ final class ActionPanel: NSPanel {
     private func height(for phase: PanelModel.Phase) -> CGFloat {
         switch phase {
         case .idle: return barHeight
+        case .input: return barHeight + 164
         case .captureNotice: return barHeight + 58
         case .loading: return barHeight + 48
         case .error: return barHeight + 56
+        case .compare: return barHeight + 310
         case .result(_, _, let text, _, _, let compact, _):
             return compact ? barHeight + 66 : ActionResultLayout.panelHeight(for: text, panelWidth: currentWidth, barHeight: barHeight)
         }
     }
 
     private func resize(for phase: PanelModel.Phase) {
+        let w = width(for: phase)
         let h = height(for: phase)
         var f = frame
         let top = f.maxY
         f.size.height = h
-        f.size.width = currentWidth
+        f.size.width = w
         f.origin.y = top - h
+        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(f) }) ?? NSScreen.main {
+            let vf = screen.visibleFrame
+            if f.maxX > vf.maxX { f.origin.x = vf.maxX - f.width - 8 }
+            if f.minX < vf.minX { f.origin.x = vf.minX + 8 }
+            if f.minY < vf.minY { f.origin.y = vf.minY + 8 }
+            if f.maxY > vf.maxY { f.origin.y = vf.maxY - f.height - 8 }
+        }
+        currentWidth = w
+        model.contentWidth = w
         setFrame(f, display: true, animate: true)
+    }
+
+    private func width(for phase: PanelModel.Phase) -> CGFloat {
+        switch phase {
+        case .compare:
+            return max(currentWidth, 560)
+        default:
+            return currentWidth
+        }
     }
 
     /// Toolbar width measured from the visible skills' labels. Extra enabled
@@ -76,17 +109,18 @@ final class ActionPanel: NSPanel {
             w += 16 + iconW + 5 + ceil(labelW)
             childCount += 1
         }
-        w += 5 + 26 + 26 + 22   // divider + copy + ··· menu + × close
-        childCount += 4
+        w += 5 + 26 + 26 + 22 + 22   // divider + copy + ··· menu + pin + × close
+        childCount += 5
         w += CGFloat(max(childCount - 1, 0)) * 2
         return max(minPanelWidth, ceil(w))
     }
 
-    func showNearMouse() {
+    func showNearMouse(minWidth: CGFloat = 320) {
         model.phase = .idle
         model.active = nil
-        currentWidth = computeWidth()
+        currentWidth = max(computeWidth(), minWidth)
         model.contentWidth = currentWidth
+        model.pinned = false
         let size = NSSize(width: currentWidth, height: barHeight)
         setContentSize(size)
 
@@ -102,5 +136,62 @@ final class ActionPanel: NSPanel {
         }
         setFrameOrigin(origin)
         orderFrontRegardless()
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let command = flags.contains(.command)
+        let keyCode = Int(event.keyCode)
+
+        if keyCode == kVK_Escape {
+            model.onClose?()
+            return true
+        }
+        if command, keyCode == kVK_ANSI_P {
+            model.onTogglePin?()
+            return true
+        }
+
+        if case .input = model.phase {
+            return false
+        }
+
+        if command, keyCode == kVK_ANSI_R {
+            model.onRetry?()
+            return true
+        }
+        if command, keyCode == kVK_ANSI_S {
+            model.onArchive?()
+            return true
+        }
+        if command, keyCode == kVK_ANSI_C {
+            return model.onCopyKeyboard?() ?? false
+        }
+        if command, keyCode == kVK_ANSI_Equal || keyCode == kVK_ANSI_KeypadPlus {
+            Settings.panelTextSizeDelta += 1
+            return true
+        }
+        if command, keyCode == kVK_ANSI_Minus || keyCode == kVK_ANSI_KeypadMinus {
+            Settings.panelTextSizeDelta -= 1
+            return true
+        }
+        if command, let index = actionIndex(for: keyCode) {
+            let actions = ActionStore.shared.enabled
+            guard actions.indices.contains(index) else { return false }
+            model.onPick?(actions[index])
+            return true
+        }
+        return false
+    }
+
+    private func actionIndex(for keyCode: Int) -> Int? {
+        switch keyCode {
+        case kVK_ANSI_1: return 0
+        case kVK_ANSI_2: return 1
+        case kVK_ANSI_3: return 2
+        case kVK_ANSI_4: return 3
+        case kVK_ANSI_5: return 4
+        default: return nil
+        }
     }
 }

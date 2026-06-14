@@ -7,6 +7,8 @@ cd "$(dirname "$0")"
 swift build -c release
 
 FLAVOR="${FLAVOR:-zh}"
+VERSION="${VERSION:-0.2.0}"
+BUILD="${BUILD:-9}"
 if [ "$FLAVOR" = "en" ] || [ "$FLAVOR" = "international" ]; then
   APP="ListenMark.app"
   BUNDLE_NAME="ListenMark"
@@ -38,8 +40,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>ListenMark</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.7</string>
-  <key>CFBundleVersion</key><string>8</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LMAppFlavor</key><string>$APP_FLAVOR</string>
   <key>LSUIElement</key><true/>
@@ -47,7 +49,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc sign so the bundle has a stable code identity for TCC.
-codesign --force --deep --sign - "$APP" 2>/dev/null || true
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+  codesign --force --deep --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP"
+else
+  # Ad-hoc sign so the bundle has a stable code identity for TCC in local dev.
+  codesign --force --deep --sign - "$APP" 2>/dev/null || true
+fi
 
 echo "✅ Built $APP"

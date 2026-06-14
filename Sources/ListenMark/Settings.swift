@@ -42,6 +42,36 @@ enum Settings {
         return URL(string: normalized + "/chat/completions")
     }
 
+    static var defaultLLMProvider: LLMProviderConfig {
+        LLMProviderConfig(id: "default", label: AppFlavor.text("默认", "Default"),
+                          baseURL: llmBaseURL, apiKey: llmAPIKey, model: llmModel,
+                          isDefault: true)
+    }
+
+    static var compareProviders: [LLMProviderConfig] {
+        var providers = [defaultLLMProvider]
+        if compareProvider1Enabled {
+            providers.append(LLMProviderConfig(id: "compare1",
+                                               label: nonEmpty(compareProvider1Label, fallback: AppFlavor.text("备选 A", "Alt A")),
+                                               baseURL: nonEmpty(compareProvider1BaseURL, fallback: llmBaseURL),
+                                               apiKey: compareProvider1APIKey,
+                                               model: compareProvider1Model))
+        }
+        if compareProvider2Enabled {
+            providers.append(LLMProviderConfig(id: "compare2",
+                                               label: nonEmpty(compareProvider2Label, fallback: AppFlavor.text("备选 B", "Alt B")),
+                                               baseURL: nonEmpty(compareProvider2BaseURL, fallback: llmBaseURL),
+                                               apiKey: compareProvider2APIKey,
+                                               model: compareProvider2Model))
+        }
+        return Array(providers.prefix(3))
+    }
+
+    private static func nonEmpty(_ value: String, fallback: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : trimmed
+    }
+
     static var deepseekKey: String {
         get { llmAPIKey }
         set { llmAPIKey = newValue }
@@ -60,6 +90,67 @@ enum Settings {
     static var autoSpeakAI: Bool {
         get { d.object(forKey: "autoSpeakAI") == nil ? true : d.bool(forKey: "autoSpeakAI") }
         set { d.set(newValue, forKey: "autoSpeakAI") }
+    }
+
+    static var panelTextSizeDelta: Int {
+        get { d.integer(forKey: "panelTextSizeDelta") }
+        set { d.set(max(-2, min(6, newValue)), forKey: "panelTextSizeDelta") }
+    }
+
+    static var compareProvider1Enabled: Bool {
+        get { d.bool(forKey: "compareProvider1Enabled") }
+        set { d.set(newValue, forKey: "compareProvider1Enabled") }
+    }
+
+    static var compareProvider1Label: String {
+        get { d.string(forKey: "compareProvider1Label") ?? AppFlavor.text("备选 A", "Alt A") }
+        set { d.set(newValue, forKey: "compareProvider1Label") }
+    }
+
+    static var compareProvider1BaseURL: String {
+        get {
+            let value = d.string(forKey: "compareProvider1BaseURL") ?? ""
+            return value.isEmpty ? recommendedLLMBaseURL : value
+        }
+        set { d.set(newValue, forKey: "compareProvider1BaseURL") }
+    }
+
+    static var compareProvider1APIKey: String {
+        get { d.string(forKey: "compareProvider1APIKey") ?? "" }
+        set { d.set(newValue, forKey: "compareProvider1APIKey") }
+    }
+
+    static var compareProvider1Model: String {
+        get { d.string(forKey: "compareProvider1Model") ?? "" }
+        set { d.set(newValue, forKey: "compareProvider1Model") }
+    }
+
+    static var compareProvider2Enabled: Bool {
+        get { d.bool(forKey: "compareProvider2Enabled") }
+        set { d.set(newValue, forKey: "compareProvider2Enabled") }
+    }
+
+    static var compareProvider2Label: String {
+        get { d.string(forKey: "compareProvider2Label") ?? AppFlavor.text("备选 B", "Alt B") }
+        set { d.set(newValue, forKey: "compareProvider2Label") }
+    }
+
+    static var compareProvider2BaseURL: String {
+        get {
+            let value = d.string(forKey: "compareProvider2BaseURL") ?? ""
+            return value.isEmpty ? recommendedLLMBaseURL : value
+        }
+        set { d.set(newValue, forKey: "compareProvider2BaseURL") }
+    }
+
+    static var compareProvider2APIKey: String {
+        get { d.string(forKey: "compareProvider2APIKey") ?? "" }
+        set { d.set(newValue, forKey: "compareProvider2APIKey") }
+    }
+
+    static var compareProvider2Model: String {
+        get { d.string(forKey: "compareProvider2Model") ?? "" }
+        set { d.set(newValue, forKey: "compareProvider2Model") }
     }
 
     // MARK: Speech engine
@@ -121,6 +212,11 @@ enum Settings {
         set { d.set(newValue, forKey: "archiveFolder") }
     }
 
+    static var historyEnabled: Bool {
+        get { d.object(forKey: "historyEnabled") == nil ? true : d.bool(forKey: "historyEnabled") }
+        set { d.set(newValue, forKey: "historyEnabled") }
+    }
+
     /// Local AVSpeechUtterance rate (0.0–1.0; ~0.5 is the natural default).
     static var speechRate: Float {
         get {
@@ -135,6 +231,11 @@ enum Settings {
     static var autoPop: Bool {
         get { d.object(forKey: "autoPop") == nil ? true : d.bool(forKey: "autoPop") }
         set { d.set(newValue, forKey: "autoPop") }
+    }
+
+    static var autoPopCopyFallback: Bool {
+        get { d.object(forKey: "autoPopCopyFallback") == nil ? true : d.bool(forKey: "autoPopCopyFallback") }
+        set { d.set(newValue, forKey: "autoPopCopyFallback") }
     }
 
     static var hotKeyCode: Int {
@@ -172,10 +273,58 @@ enum Settings {
         }
         set { d.set(newValue, forKey: "ocrHkDisplay") }
     }
+
+    static var silentOCRHotKeyCode: Int {
+        get { d.object(forKey: "silentOcrHkCode") == nil ? Int(kVK_ANSI_C) : d.integer(forKey: "silentOcrHkCode") }
+        set { d.set(newValue, forKey: "silentOcrHkCode") }
+    }
+
+    static var silentOCRHotKeyMods: Int {
+        get { d.object(forKey: "silentOcrHkMods") == nil ? (controlKey | shiftKey) : d.integer(forKey: "silentOcrHkMods") }
+        set { d.set(newValue, forKey: "silentOcrHkMods") }
+    }
+
+    static var silentOCRHotKeyDisplay: String {
+        get {
+            let s = d.string(forKey: "silentOcrHkDisplay") ?? ""
+            return s.isEmpty ? "⌃⇧C" : s
+        }
+        set { d.set(newValue, forKey: "silentOcrHkDisplay") }
+    }
+
+    static var inputHotKeyCode: Int {
+        get { d.object(forKey: "inputHkCode") == nil ? Int(kVK_ANSI_I) : d.integer(forKey: "inputHkCode") }
+        set { d.set(newValue, forKey: "inputHkCode") }
+    }
+
+    static var inputHotKeyMods: Int {
+        get { d.object(forKey: "inputHkMods") == nil ? (controlKey | shiftKey) : d.integer(forKey: "inputHkMods") }
+        set { d.set(newValue, forKey: "inputHkMods") }
+    }
+
+    static var inputHotKeyDisplay: String {
+        get {
+            let s = d.string(forKey: "inputHkDisplay") ?? ""
+            return s.isEmpty ? "⌃⇧I" : s
+        }
+        set { d.set(newValue, forKey: "inputHkDisplay") }
+    }
+
+    static var ocrAutoRunLastAction: Bool {
+        get { d.object(forKey: "ocrAutoRunLastAction") == nil ? true : d.bool(forKey: "ocrAutoRunLastAction") }
+        set { d.set(newValue, forKey: "ocrAutoRunLastAction") }
+    }
+
+    static var lastActionID: String {
+        get { d.string(forKey: "lastActionID") ?? "" }
+        set { d.set(newValue, forKey: "lastActionID") }
+    }
 }
 
 /// Posted whenever the trigger config (hotkey / auto-pop) changes.
 extension Notification.Name {
     static let gebwConfigChanged = Notification.Name("GEBWConfigChanged")
+    static let gebwOpenSettings = Notification.Name("GEBWOpenSettings")
     static let gebwOpenActions = Notification.Name("GEBWOpenActions")
+    static let gebwOpenServices = Notification.Name("GEBWOpenServices")
 }

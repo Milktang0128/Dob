@@ -34,29 +34,35 @@ Use the `listenmark-v...` prerelease for the international edition.
 | Context | Adds background needed to understand the selection, off by default | OpenAI-compatible API key |
 | Insight | Surfaces deeper meaning, values, tension, or implications, off by default | OpenAI-compatible API key |
 | Blind Spots | Finds missing assumptions, weak points, and follow-up checks, off by default | OpenAI-compatible API key |
-| Proofread | Reviews a writing draft with minimal edit suggestions, off by default | OpenAI-compatible API key |
+| Proofread | Directly outputs a proofread revision of a writing draft, off by default | OpenAI-compatible API key |
 | Custom actions | Add up to 4 personal prompt-based actions | OpenAI-compatible API key |
 | Screen OCR | Select a screen region when direct text capture fails | None |
 | Archive | Save source text, result, app, time, and context excerpt locally | None |
+| History | Silently keeps the latest 500 actions without full-text context | None |
 | Review | Replay and review saved items | None |
 
 ## Highlights
 
 - AI actions use full-text context by default when the current app exposes accessible surrounding text.
+- Auto-pop first uses Accessibility selection capture; in WebViews that do not expose standard selection, compatibility mode can temporarily copy after drag or double-click selection, then restore the clipboard.
 - When context is used, the result shows a small "Context included" indicator.
-- Saved context stays lightweight: only about 200 characters before and after the selection are archived, with the selection marked.
+- Saved context stays lightweight: only about 200 characters before and after the selection are archived, with the selection highlighted as `==selected text==`.
+- Silent history keeps the latest 500 processed actions for Bob-style lookup. It does not save full-text context and does not enter Review.
 - Every action can have its own global hotkey. Defaults: Read `Control + Shift + R`, Explain `Control + Shift + E`, Translate `Control + Shift + T`.
 - Read always stays first; other actions can be reordered, disabled, edited, or moved into the More menu.
+- The panel supports keyboard control: `Esc` close, `⌘R` retry, `⌘S` save, `⌘C` copy, `⌘P` pin, `⌘1` to `⌘5` for the first five actions, and `⌘+ / ⌘-` for result text size.
+- Model Compare can run the same action against the default model and up to two alternate OpenAI-compatible models. One failed model does not block the others.
 - The action editor includes AI Optimize for improving prompts with your current AI model.
 - The copy icon copies immediately, then shows a small save affordance.
 - Replay uses the existing generated result instead of asking the model again.
 - Screen selection OCR is available from Settings as a fallback hotkey. Default: `Control + Shift + O`.
+- Services are managed in a dedicated window for models, compare models, OCR, and speech providers. Common OpenAI-compatible providers can fill Base URL and model presets with one click. Settings stays focused on triggers, capture, behavior, and archiving.
 - Automatic updates follow the matching GitHub release channel, verify the downloaded app, and install it directly when macOS permissions allow. Chinese and international builds do not cross-update.
 
 ## Quick Start
 
 1. Open ListenMark and grant Accessibility permission when macOS asks.
-2. Add an OpenAI-compatible API key in Settings for AI actions. DeepSeek is prefilled as the recommended default provider.
+2. Open Services from the menu bar item and add an OpenAI-compatible API key for AI actions. DeepSeek is prefilled as the recommended default provider.
 3. Select text in any app.
 4. Use the floating panel, menu bar item, or an action hotkey.
 5. Save useful results to the local archive.

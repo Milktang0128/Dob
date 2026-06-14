@@ -9,9 +9,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var outsideMonitor: Any?
     private var mouseUpMonitor: Any?
     private weak var triggerMenuItem: NSMenuItem?
+    private var autoPopMouseDownLocation: NSPoint?
+    private var autoPopDidDrag = false
+    private var autoPopGeneration = 0
+    private var lastAutoCopyFallbackAt = Date.distantPast
 
     private var archiveWindow: NSWindow?
+    private var historyWindow: NSWindow?
     private var settingsWindow: NSWindow?
+    private var servicesWindow: NSWindow?
     private var actionsWindow: NSWindow?
     private var reviewWindow: NSWindow?
     private var aboutWindow: NSWindow?
@@ -32,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = ArchiveStore.shared
+        _ = HistoryStore.shared
         _ = ActionStore.shared
         setupMainMenu()
         setupStatusItem()
@@ -41,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                name: .gebwConfigChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(openActions),
                                                name: .gebwOpenActions, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(openSettings),
+                                               name: .gebwOpenSettings, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(openServices),
+                                               name: .gebwOpenServices, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(appActivated(_:)),
                                                           name: NSWorkspace.didActivateApplicationNotification, object: nil)
         if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { enableAX(pid) }
@@ -64,7 +75,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func wirePanel() {
         let m = panel.model
-        m.onPick = { [weak self] def in self?.perform(def) }
+        m.onPick = { [weak self] def in
+            self?.syncInputTextFromPanel()
+            self?.perform(def)
+        }
+        m.onInputChanged = { [weak self] text in
+            self?.currentText = text
+        }
         m.onReplay = { [weak self] in
             guard let self else { return }
             Speaker.shared.replay(self.currentResult.isEmpty ? self.currentText : self.currentResult)
@@ -73,6 +90,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Speaker.shared.stop()
             self?.streamTask?.cancel()
         }
+        m.onRetry = { [weak self] in
+            self?.retryCurrentAction()
+        }
         m.onArchive = { [weak self] in
             self?.archivePendingEntry(updatePanel: true)
         }
@@ -80,7 +100,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.archiveOriginalCopy()
         }
         m.onCopyOriginal = { [weak self] in
-            guard let self, !self.currentText.isEmpty else { return false }
+            guard let self else { return false }
+            self.syncInputTextFromPanel()
+            guard !self.currentText.isEmpty else { return false }
             self.copyToPasteboard(self.currentText)
             return true
         }
@@ -88,6 +110,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self, !text.isEmpty else { return false }
             self.copyToPasteboard(text)
             return true
+        }
+        m.onCopyKeyboard = { [weak self] in
+            self?.copyCurrentPanelText() ?? false
+        }
+        m.onCompare = { [weak self] in
+            self?.startCompare()
+        }
+        m.onTogglePin = { [weak self] in
+            self?.togglePanelPin()
         }
         m.onAutoSpeakChanged = { enabled in
             if !enabled {
@@ -152,13 +183,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }) {
             NSLog("ListenMark · \(AppFlavor.text("屏幕 OCR 快捷键注册失败", "screen OCR hotkey registration failed"))：\(Settings.ocrHotKeyDisplay)")
         }
+        if !HotkeyManager.shared.register(id: 3,
+                                          keyCode: UInt32(Settings.silentOCRHotKeyCode),
+                                          carbonModifiers: UInt32(Settings.silentOCRHotKeyMods),
+                                          onFire: { [weak self] in
+            self?.triggerSilentScreenOCR()
+        }) {
+            NSLog("ListenMark · \(AppFlavor.text("静默 OCR 快捷键注册失败", "silent OCR hotkey registration failed"))：\(Settings.silentOCRHotKeyDisplay)")
+        }
+        if !HotkeyManager.shared.register(id: 4,
+                                          keyCode: UInt32(Settings.inputHotKeyCode),
+                                          carbonModifiers: UInt32(Settings.inputHotKeyMods),
+                                          onFire: { [weak self] in
+            self?.triggerInputPanel()
+        }) {
+            NSLog("ListenMark · \(AppFlavor.text("输入面板快捷键注册失败", "input panel hotkey registration failed"))：\(Settings.inputHotKeyDisplay)")
+        }
         registerActionHotKeys()
         triggerMenuItem?.title = "\(AppFlavor.text("处理选中文本", "Process Selection"))  \(Settings.hotKeyDisplay)"
 
         if let m = mouseUpMonitor { NSEvent.removeMonitor(m); mouseUpMonitor = nil }
         if Settings.autoPop {
-            mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
-                self?.handleSelectionMouseUp()
+            mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
+                self?.handleAutoPopMouseEvent(event)
             }
         }
     }
@@ -179,30 +226,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func handleSelectionMouseUp() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
-            guard let self else { return }
-            guard !self.panel.isVisible else { return }
-            let contextSource = SelectionGrabber.contextSource()
-            guard let text = SelectionGrabber.axSelectedText() else {
-                self.lastAutoText = ""
-                self.currentContext = ""
-                self.currentContextSource = nil
-                self.currentContextUsed = false
+    private func handleAutoPopMouseEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            autoPopMouseDownLocation = event.locationInWindow
+            autoPopDidDrag = false
+        case .leftMouseDragged:
+            guard let start = autoPopMouseDownLocation else {
+                autoPopMouseDownLocation = event.locationInWindow
                 return
             }
-            guard text != self.lastAutoText else { return }
-            self.cancelActiveAction()
-            self.lastAutoText = text
-            self.currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? AppFlavor.text("未知来源", "Unknown Source")
-            self.currentText = text
-            self.currentContext = ""
-            self.currentContextSource = contextSource
-            self.currentContextUsed = false
-            self.currentResult = ""
-            self.pendingEntry = nil
-            self.showPanel()
+            if distance(from: start, to: event.locationInWindow) > 5 {
+                autoPopDidDrag = true
+            }
+        case .leftMouseUp:
+            let moved = autoPopMouseDownLocation.map { distance(from: $0, to: event.locationInWindow) > 5 } ?? false
+            let allowCopyFallback = autoPopDidDrag || moved || event.clickCount > 1
+            autoPopMouseDownLocation = nil
+            autoPopDidDrag = false
+            handleSelectionMouseUp(allowCopyFallback: allowCopyFallback)
+        default:
+            break
         }
+    }
+
+    private func handleSelectionMouseUp(allowCopyFallback: Bool) {
+        autoPopGeneration += 1
+        let generation = autoPopGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+            guard let self else { return }
+            guard self.autoPopGeneration == generation else { return }
+            guard !self.panel.isVisible else { return }
+            let contextSource = SelectionGrabber.contextSource()
+            if let text = SelectionGrabber.axSelectedText() {
+                self.presentAutoSelection(text, contextSource: contextSource)
+                return
+            }
+
+            guard Settings.autoPopCopyFallback,
+                  allowCopyFallback,
+                  self.canRunAutoCopyFallback() else {
+                self.clearAutoSelectionState()
+                return
+            }
+
+            self.lastAutoCopyFallbackAt = Date()
+            SelectionGrabber.copySelectedTextAsync { [weak self] text in
+                guard let self else { return }
+                guard self.autoPopGeneration == generation else { return }
+                guard !self.panel.isVisible else { return }
+                guard let text, !text.isEmpty else {
+                    self.clearAutoSelectionState()
+                    return
+                }
+                self.presentAutoSelection(text, contextSource: contextSource)
+            }
+        }
+    }
+
+    private func presentAutoSelection(_ text: String, contextSource: SelectionGrabber.ContextSource) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else {
+            clearAutoSelectionState()
+            return
+        }
+        guard clean != lastAutoText else { return }
+        cancelActiveAction()
+        lastAutoText = clean
+        currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? AppFlavor.text("未知来源", "Unknown Source")
+        currentText = clean
+        currentContext = ""
+        currentContextSource = contextSource
+        currentContextUsed = false
+        currentResult = ""
+        pendingEntry = nil
+        showPanel()
+    }
+
+    private func clearAutoSelectionState() {
+        lastAutoText = ""
+        currentContext = ""
+        currentContextSource = nil
+        currentContextUsed = false
+    }
+
+    private func canRunAutoCopyFallback() -> Bool {
+        Date().timeIntervalSince(lastAutoCopyFallbackAt) > 0.7
+    }
+
+    private func distance(from start: NSPoint, to end: NSPoint) -> CGFloat {
+        hypot(end.x - start.x, end.y - start.y)
     }
 
     // MARK: - Status item
@@ -218,13 +331,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         trigger.target = self
         menu.addItem(trigger)
         triggerMenuItem = trigger
+        add(menu, AppFlavor.text("输入文本…", "Input Text…"), #selector(triggerInputFromMenu))
+        add(menu, AppFlavor.text("屏幕 OCR…", "Screen OCR…"), #selector(triggerScreenOCRFromMenu))
+        add(menu, AppFlavor.text("静默 OCR 复制…", "Silent OCR Copy…"), #selector(triggerSilentScreenOCRFromMenu))
         menu.addItem(.separator())
         let review = NSMenuItem(title: AppFlavor.text("今日回响…", "Review…"), action: #selector(openReview), keyEquivalent: "")
         review.target = self
         menu.addItem(review)
         reviewMenuItem = review
         add(menu, AppFlavor.text("打开档案…", "Open Archive…"), #selector(openArchive))
+        add(menu, AppFlavor.text("历史记录…", "History…"), #selector(openHistory))
         add(menu, AppFlavor.text("编辑技能…", "Edit Actions…"), #selector(openActions))
+        add(menu, AppFlavor.text("服务管理…", "Services…"), #selector(openServices))
         add(menu, AppFlavor.text("设置…", "Settings…"), #selector(openSettings))
         add(menu, AppFlavor.text("检查更新…", "Check for Updates…"), #selector(checkForUpdates))
         add(menu, AppFlavor.text("关于 \(AppFlavor.appName)…", "About \(AppFlavor.appName)…"), #selector(openAbout))
@@ -252,6 +370,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Trigger
 
     @objc private func triggerFromMenu() { triggerCapture() }
+    @objc private func triggerInputFromMenu() { triggerInputPanel() }
+    @objc private func triggerScreenOCRFromMenu() { triggerScreenOCR() }
+    @objc private func triggerSilentScreenOCRFromMenu() { triggerSilentScreenOCR() }
 
     private func triggerCapture() {
         triggerSelection(actionID: nil)
@@ -262,14 +383,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func triggerScreenOCR() {
+        triggerScreenOCR(silent: false)
+    }
+
+    private func triggerSilentScreenOCR() {
+        triggerScreenOCR(silent: true)
+    }
+
+    private func triggerScreenOCR(silent: Bool) {
         cancelActiveAction()
         let generation = actionGeneration
-        currentSource = AppFlavor.text("屏幕 OCR", "Screen OCR")
+        currentSource = silent ? AppFlavor.text("静默 OCR", "Silent OCR") : AppFlavor.text("屏幕 OCR", "Screen OCR")
         ScreenOCR.shared.start { [weak self] text in
             guard let self else { return }
             guard self.actionGeneration == generation else { return }
             let clean = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !clean.isEmpty else {
+                if silent {
+                    return
+                }
                 self.currentText = ""
                 self.currentContext = ""
                 self.currentContextSource = nil
@@ -281,6 +413,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
 
+            if silent {
+                self.copyToPasteboard(clean)
+                self.recordHistory(action: AppFlavor.text("OCR", "OCR"), icon: "text.viewfinder",
+                                   source: self.currentSource, original: clean, response: nil)
+                return
+            }
+
             self.currentText = clean
             self.currentContext = ""
             self.currentContextSource = nil
@@ -289,8 +428,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.pendingEntry = nil
             self.lastAutoText = clean
             self.showPanel()
-            self.panel.model.phase = .captureNotice(source: AppFlavor.text("OCR", "OCR"), text: clean)
+            if Settings.ocrAutoRunLastAction, let action = self.lastUsableAction() {
+                self.perform(action, remember: false)
+            } else {
+                self.recordHistory(action: AppFlavor.text("OCR", "OCR"), icon: "text.viewfinder",
+                                   source: self.currentSource, original: clean, response: nil)
+                self.panel.model.phase = .captureNotice(source: AppFlavor.text("OCR", "OCR"), text: clean)
+            }
         }
+    }
+
+    private func triggerInputPanel() {
+        cancelActiveAction()
+        currentSource = AppFlavor.text("输入文本", "Input Text")
+        currentText = ""
+        currentContext = ""
+        currentContextSource = nil
+        currentContextUsed = false
+        currentResult = ""
+        currentAction = nil
+        pendingEntry = nil
+        panel.model.inputText = ""
+        showPanel(minWidth: 500)
+        panel.model.phase = .input
     }
 
     private func triggerSelection(actionID: String?) {
@@ -334,21 +494,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Panel lifecycle
 
-    private func showPanel() {
-        panel.showNearMouse()
-        removeOutsideMonitor()
-        outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.closePanel()
-        }
+    private func showPanel(minWidth: CGFloat = 320) {
+        panel.showNearMouse(minWidth: minWidth)
+        panel.model.canCompare = false
+        panel.model.selectedCompareID = nil
+        refreshOutsideMonitor()
     }
 
     private func removeOutsideMonitor() {
         if let m = outsideMonitor { NSEvent.removeMonitor(m); outsideMonitor = nil }
     }
 
+    private func refreshOutsideMonitor() {
+        removeOutsideMonitor()
+        guard !panel.model.pinned else { return }
+        outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self, !self.panel.model.pinned else { return }
+            self.closePanel()
+        }
+    }
+
+    private func togglePanelPin() {
+        panel.model.pinned.toggle()
+        refreshOutsideMonitor()
+    }
+
     private func closePanel() {
         removeOutsideMonitor()
         cancelActiveAction()
+        panel.model.pinned = false
         panel.orderOut(nil)
     }
 
@@ -359,14 +533,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Speaker.shared.stop()
     }
 
+    private func retryCurrentAction() {
+        guard let action = currentAction else { return }
+        perform(action, remember: false)
+    }
+
+    private func copyCurrentPanelText() -> Bool {
+        let text: String
+        switch panel.model.phase {
+        case .compare(_, _, let results, _, _):
+            text = formatCompareResults(results)
+        case .result:
+            text = currentResult.isEmpty ? currentText : currentResult
+        case .captureNotice:
+            text = currentText
+        default:
+            text = currentText
+        }
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return false }
+        copyToPasteboard(clean)
+        return true
+    }
+
     // MARK: - Run an action
 
-    private func perform(_ action: ActionDef) {
+    private func perform(_ action: ActionDef, remember: Bool = true) {
+        syncInputTextFromPanel()
         let text = currentText
         guard !text.isEmpty else { return }
         cancelActiveAction()
         let generation = actionGeneration
         panel.model.active = action.id
+        panel.model.canCompare = false
+        panel.model.selectedCompareID = nil
+        if remember {
+            Settings.lastActionID = action.id
+        }
 
         if action.needsLLM && Settings.llmAPIKey.isEmpty {
             panel.model.phase = .error(AppFlavor.text("「\(action.name)」需要 API Key，请到「设置」填写 OpenAI 兼容接口配置", "\(action.name) needs an API key. Add your OpenAI-compatible API settings in Settings."))
@@ -439,14 +642,138 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func startCompare() {
+        syncInputTextFromPanel()
+        let text = currentText
+        guard let action = currentAction, action.needsLLM, !text.isEmpty else { return }
+        let providers = Settings.compareProviders
+        guard providers.count >= 2 else {
+            panel.model.phase = .error(AppFlavor.text("请先在设置里启用至少一个备选比较模型", "Enable at least one alternate comparison model in Settings first."))
+            return
+        }
+
+        cancelActiveAction()
+        let generation = actionGeneration
+        let source = currentSource
+        let context = contextText(for: text)
+        let request = requestPayload(for: action, selectedText: text, context: context)
+        currentContext = context
+        currentContextUsed = request.contextUsed
+        currentAction = action
+        panel.model.active = action.id
+        panel.model.canCompare = false
+        panel.model.selectedCompareID = providers.first?.id
+
+        let initialResults = providers.map {
+            CompareModelResult(id: $0.id, label: $0.label, model: $0.model,
+                               text: "", isLoading: true, error: nil)
+        }
+        panel.model.phase = .compare(action: action.name, icon: "rectangle.split.3x1",
+                                     results: initialResults, archived: false,
+                                     contextUsed: request.contextUsed)
+
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+            var latest = initialResults
+            await withTaskGroup(of: CompareModelResult.self) { group in
+                for provider in providers {
+                    group.addTask {
+                        await Self.runCompareCandidate(provider: provider,
+                                                       prompt: request.prompt,
+                                                       text: request.text)
+                    }
+                }
+
+                for await result in group {
+                    if Task.isCancelled { group.cancelAll(); break }
+                    latest = latest.map { $0.id == result.id ? result : $0 }
+                    let snapshot = latest
+                    await MainActor.run {
+                        guard self.actionGeneration == generation else { return }
+                        self.panel.model.phase = .compare(action: action.name,
+                                                         icon: "rectangle.split.3x1",
+                                                         results: snapshot,
+                                                         archived: false,
+                                                         contextUsed: request.contextUsed)
+                    }
+                }
+            }
+
+            let finalResults = latest
+            await MainActor.run {
+                guard self.actionGeneration == generation, !Task.isCancelled else { return }
+                self.finishCompareResult(action: action, source: source, original: text,
+                                         results: finalResults, contextUsed: request.contextUsed)
+            }
+        }
+    }
+
+    private static func runCompareCandidate(provider: LLMProviderConfig, prompt: String, text: String) async -> CompareModelResult {
+        let model = provider.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else {
+            return CompareModelResult(id: provider.id, label: provider.label, model: provider.model,
+                                      text: "", isLoading: false,
+                                      error: AppFlavor.text("未设置模型名", "Model is not set"))
+        }
+        do {
+            let response = try await LLMClient.complete(prompt: prompt, text: text, provider: provider)
+            return CompareModelResult(id: provider.id, label: provider.label, model: provider.model,
+                                      text: response, isLoading: false, error: nil)
+        } catch is CancellationError {
+            return CompareModelResult(id: provider.id, label: provider.label, model: provider.model,
+                                      text: "", isLoading: false,
+                                      error: AppFlavor.text("已取消", "Cancelled"))
+        } catch {
+            return CompareModelResult(id: provider.id, label: provider.label, model: provider.model,
+                                      text: "", isLoading: false,
+                                      error: describe(error))
+        }
+    }
+
+    private func finishCompareResult(action: ActionDef, source: String, original: String,
+                                     results: [CompareModelResult], contextUsed: Bool) {
+        let combined = formatCompareResults(results)
+        let comparison = comparisonRecord(from: results)
+        currentResult = combined
+        currentAction = action
+        currentContextUsed = contextUsed
+        panel.model.canCompare = action.needsLLM
+
+        let entry = Entry(action: AppFlavor.text("比较 · \(action.name)", "Compare · \(action.name)"),
+                          icon: "rectangle.split.3x1",
+                          sourceApp: source,
+                          original: original,
+                          response: combined,
+                          responseModel: comparison.selectedID,
+                          comparison: comparison,
+                          contextUsed: contextUsed,
+                          contextExcerpt: contextUsed ? contextExcerpt(from: currentContext, selectedText: original) : nil)
+        recordHistory(action: entry.action, icon: entry.icon, source: source,
+                      original: original, response: combined, comparison: comparison)
+
+        let auto = Settings.autoArchive
+        if auto {
+            ArchiveStore.shared.add(entry)
+            pendingEntry = nil
+        } else {
+            pendingEntry = entry
+        }
+        panel.model.phase = .compare(action: action.name, icon: "rectangle.split.3x1",
+                                     results: results, archived: auto,
+                                     contextUsed: contextUsed)
+    }
+
     private func finishResult(action: ActionDef, source: String, original: String, response: String?,
                               spoken: String, contextUsed: Bool) {
         currentResult = spoken
         currentAction = action
         currentContextUsed = contextUsed
+        panel.model.canCompare = action.needsLLM
         let entry = Entry(action: action.name, icon: action.icon, sourceApp: source,
                           original: original, response: response, contextUsed: contextUsed,
                           contextExcerpt: contextUsed ? contextExcerpt(from: currentContext, selectedText: original) : nil)
+        recordHistory(action: action.name, icon: action.icon, source: source,
+                      original: original, response: response)
         let auto = Settings.autoArchive
         if auto {
             ArchiveStore.shared.add(entry)
@@ -498,8 +825,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let selected = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanContext.isEmpty, !selected.isEmpty else { return nil }
 
-        let markerStart = AppFlavor.text("【选中内容开始】", "[Selection begins]")
-        let markerEnd = AppFlavor.text("【选中内容结束】", "[Selection ends]")
         guard let range = cleanContext.range(of: selected, options: [.caseInsensitive, .diacriticInsensitive])
                 ?? compactRange(of: selected, in: cleanContext) else { return nil }
 
@@ -508,8 +833,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let before = cleanContext[start..<range.lowerBound]
         let match = cleanContext[range]
         let after = cleanContext[range.upperBound..<end]
-        return "\(before)\(markerStart)\(match)\(markerEnd)\(after)"
+        return "\(before)==\(match)==\(after)"
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func recordHistory(action: String, icon: String?, source: String, original: String,
+                               response: String?, comparison: ComparisonRecord? = nil) {
+        let cleanOriginal = original.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanOriginal.isEmpty || !(cleanResponse?.isEmpty ?? true) else { return }
+        HistoryStore.shared.add(HistoryEntry(action: action, icon: icon, sourceApp: source,
+                                             original: cleanOriginal,
+                                             response: cleanResponse?.isEmpty == true ? nil : cleanResponse,
+                                             comparison: comparison))
+    }
+
+    private func formatCompareResults(_ results: [CompareModelResult]) -> String {
+        results.map { result in
+            let statusText: String
+            if let error = result.error {
+                statusText = AppFlavor.text("出错：\(error)", "Error: \(error)")
+            } else if result.isLoading {
+                statusText = AppFlavor.text("等待结果…", "Waiting for result...")
+            } else {
+                statusText = result.text
+            }
+            return "\(result.label) · \(result.model)\n\(statusText)"
+        }
+        .joined(separator: "\n\n---\n\n")
+    }
+
+    private func comparisonRecord(from results: [CompareModelResult]) -> ComparisonRecord {
+        let selectedID = panel.model.selectedCompareID ?? results.first?.id ?? "default"
+        return ComparisonRecord(
+            primaryID: results.first?.id ?? "default",
+            selectedID: selectedID,
+            results: results.map {
+                ModelRunResult(id: $0.id,
+                               label: $0.label,
+                               model: $0.model,
+                               status: $0.error == nil ? ($0.isLoading ? "loading" : "succeeded") : "failed",
+                               response: $0.text.isEmpty ? nil : $0.text,
+                               error: $0.error)
+            }
+        )
     }
 
     private func compactRange(of selected: String, in context: String) -> Range<String.Index>? {
@@ -547,6 +914,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    private func syncInputTextFromPanel() {
+        if panel.model.phase == .input {
+            currentText = panel.model.inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private func lastUsableAction() -> ActionDef? {
+        let id = Settings.lastActionID
+        guard !id.isEmpty else { return nil }
+        return ActionStore.shared.actions.first { $0.id == id && $0.enabled }
+    }
+
     private func archiveOriginalCopy() {
         let entry = Entry(action: AppFlavor.text("摘录", "Clip"), icon: "doc.on.doc", sourceApp: currentSource,
                           original: currentText, response: nil)
@@ -557,10 +936,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let entry = pendingEntry else { return }
         ArchiveStore.shared.add(entry)
         pendingEntry = nil
-        guard updatePanel, let action = currentAction else { return }
-        panel.model.phase = .result(action: action.name, icon: action.icon, text: currentResult,
-                                    replay: true, archived: true, compact: !action.needsLLM,
-                                    contextUsed: currentContextUsed)
+        guard updatePanel else { return }
+        switch panel.model.phase {
+        case .compare(let action, let icon, let results, _, let contextUsed):
+            panel.model.phase = .compare(action: action, icon: icon, results: results,
+                                         archived: true, contextUsed: contextUsed)
+        default:
+            guard let action = currentAction else { return }
+            panel.model.phase = .result(action: action.name, icon: action.icon, text: currentResult,
+                                        replay: true, archived: true, compact: !action.needsLLM,
+                                        contextUsed: currentContextUsed)
+        }
     }
 
     private static func describe(_ error: Error) -> String {
@@ -598,8 +984,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showWindow(&archiveWindow, size: NSSize(width: 880, height: 580), title: AppFlavor.text("\(AppFlavor.appName) · 档案", "\(AppFlavor.appName) · Archive")) { ArchiveView() }
     }
 
+    @objc private func openHistory() {
+        showWindow(&historyWindow, size: NSSize(width: 760, height: 560), title: AppFlavor.text("\(AppFlavor.appName) · 历史记录", "\(AppFlavor.appName) · History")) { HistoryView() }
+    }
+
     @objc private func openSettings() {
-        showWindow(&settingsWindow, size: NSSize(width: 470, height: 640), title: AppFlavor.text("\(AppFlavor.appName) · 设置", "\(AppFlavor.appName) · Settings")) { SettingsView() }
+        showWindow(&settingsWindow, size: NSSize(width: 540, height: 660), title: AppFlavor.text("\(AppFlavor.appName) · 设置", "\(AppFlavor.appName) · Settings")) { SettingsView() }
+    }
+
+    @objc private func openServices() {
+        showWindow(&servicesWindow, size: NSSize(width: 880, height: 620), title: AppFlavor.text("\(AppFlavor.appName) · 服务管理", "\(AppFlavor.appName) · Services")) { ServicesView() }
     }
 
     @objc private func openActions() {

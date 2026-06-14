@@ -40,12 +40,61 @@ struct Entry: Identifiable, Codable {
     var sourceApp: String
     var original: String
     var response: String?
+    var responseModel: String? = nil
+    var comparison: ComparisonRecord? = nil
     var contextUsed: Bool?
     var contextExcerpt: String?
     // Spaced-repetition state (optional → back-compatible with old archives).
     var reviewCount: Int?
     var lastReviewed: Date?
     var mastered: Bool?
+}
+
+/// Silent recent-history item. This deliberately omits full-text context so it
+/// stays lightweight and separate from intentional archive entries.
+struct HistoryEntry: Identifiable, Codable {
+    var id: UUID = UUID()
+    var date: Date = Date()
+    var action: String
+    var icon: String?
+    var sourceApp: String
+    var original: String
+    var response: String?
+    var responseModel: String? = nil
+    var comparison: ComparisonRecord? = nil
+}
+
+struct LLMProviderConfig: Identifiable, Equatable {
+    var id: String
+    var label: String
+    var baseURL: String
+    var apiKey: String
+    var model: String
+    var isDefault: Bool = false
+}
+
+struct CompareModelResult: Identifiable, Equatable {
+    var id: String
+    var label: String
+    var model: String
+    var text: String
+    var isLoading: Bool
+    var error: String?
+}
+
+struct ModelRunResult: Identifiable, Codable, Equatable {
+    var id: String
+    var label: String
+    var model: String
+    var status: String
+    var response: String?
+    var error: String?
+}
+
+struct ComparisonRecord: Codable, Equatable {
+    var primaryID: String
+    var selectedID: String
+    var results: [ModelRunResult]
 }
 
 /// Lightweight spaced-repetition schedule for 今日回响.

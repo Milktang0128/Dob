@@ -40,6 +40,7 @@ final class ArchiveStore: ObservableObject {
         guard let data = try? Data(contentsOf: jsonURL),
               let list = try? JSONDecoder.iso.decode([Entry].self, from: data) else { return }
         entries = list
+        exportMarkdown()
     }
 
     func add(_ entry: Entry) {
@@ -109,10 +110,21 @@ final class ArchiveStore: ObservableObject {
                 md += "_\(AppFlavor.text("已附带上下文", "Context included"))_\n\n"
             }
             md += "> \(e.original.replacingOccurrences(of: "\n", with: "\n> "))\n\n"
-            if let r = e.response, !r.isEmpty { md += "\(r)\n\n" }
+            if let comparison = e.comparison {
+                for result in comparison.results {
+                    md += "### \(result.label) · \(result.model)\n\n"
+                    if let response = result.response, !response.isEmpty {
+                        md += "\(response)\n\n"
+                    } else if let error = result.error, !error.isEmpty {
+                        md += "_\(AppFlavor.text("出错", "Error"))：\(error)_\n\n"
+                    }
+                }
+            } else if let r = e.response, !r.isEmpty {
+                md += "\(r)\n\n"
+            }
             if let context = e.contextExcerpt, !context.isEmpty {
                 md += "<details>\n<summary>\(AppFlavor.text("上下文摘录", "Context excerpt"))</summary>\n\n"
-                md += "```text\n\(context)\n```\n\n"
+                md += "\(ContextExcerptFormatter.markdownHighlighted(context))\n\n"
                 md += "</details>\n\n"
             }
             md += "---\n\n"

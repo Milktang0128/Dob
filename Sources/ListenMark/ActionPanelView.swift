@@ -52,24 +52,36 @@ enum ActionResultLayout {
 final class PanelModel: ObservableObject {
     enum Phase: Equatable {
         case idle
+        case input
         case captureNotice(source: String, text: String)
         case loading(String)                                                              // action name
         case result(action: String, icon: String, text: String, replay: Bool,
                     archived: Bool, compact: Bool, contextUsed: Bool)
+        case compare(action: String, icon: String, results: [CompareModelResult],
+                     archived: Bool, contextUsed: Bool)
         case error(String)
     }
 
     @Published var phase: Phase = .idle
     @Published var active: String?      // active action id (drives the accent)
     @Published var contentWidth: CGFloat = 320   // measured to fit the enabled skills
+    @Published var inputText: String = ""
+    @Published var pinned = false
+    @Published var canCompare = false
+    @Published var selectedCompareID: String?
 
     var onPick: ((ActionDef) -> Void)?
+    var onInputChanged: ((String) -> Void)?
     var onReplay: (() -> Void)?
     var onStop: (() -> Void)?
+    var onRetry: (() -> Void)?
     var onArchive: (() -> Void)?
     var onArchiveOriginal: (() -> Void)?
     var onCopyOriginal: (() -> Bool)?
     var onCopyResult: ((String) -> Bool)?
+    var onCopyKeyboard: (() -> Bool)?
+    var onCompare: (() -> Void)?
+    var onTogglePin: (() -> Void)?
     var onAutoSpeakChanged: ((Bool) -> Void)?
     var onClose: (() -> Void)?
     var onOpenArchive: (() -> Void)?
@@ -87,7 +99,11 @@ struct ActionPanelView: View {
     @State private var resultCopyArchived = false
     @State private var originalCopyToken = UUID()
     @State private var resultCopyToken = UUID()
+    @FocusState private var inputFocused: Bool
     @AppStorage("autoSpeakAI") private var autoSpeakAI = true
+    @AppStorage("panelTextSizeDelta") private var panelTextSizeDelta = 0
+
+    private var resultFontSize: CGFloat { CGFloat(13 + panelTextSizeDelta) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -107,6 +123,11 @@ struct ActionPanelView: View {
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
         .animation(.easeOut(duration: 0.16), value: model.phase)
+        .onChange(of: model.phase) { _, phase in
+            if phase == .input {
+                DispatchQueue.main.async { inputFocused = true }
+            }
+        }
     }
 
     // MARK: Slim toolbar
@@ -168,6 +189,16 @@ struct ActionPanelView: View {
             .menuIndicator(.hidden)
             .fixedSize()
 
+            Button { model.onTogglePin?() } label: {
+                Image(systemName: model.pinned ? "pin.fill" : "pin")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(model.pinned ? Color.accentColor : Color.secondary)
+                    .frame(width: 22, height: 34)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(model.pinned ? AppFlavor.text("取消固定窗口", "Unpin Window") : AppFlavor.text("固定窗口", "Pin Window"))
+
             Button { model.onClose?() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .semibold))
@@ -196,6 +227,40 @@ struct ActionPanelView: View {
         switch model.phase {
         case .idle:
             EmptyView()
+
+        case .input:
+            VStack(alignment: .leading, spacing: 8) {
+                Label(AppFlavor.text("输入内容", "Input text"), systemImage: "keyboard")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: inputBinding)
+                        .font(.system(size: 13))
+                        .lineSpacing(2)
+                        .scrollContentBackground(.hidden)
+                        .focused($inputFocused)
+                    if model.inputText.isEmpty {
+                        Text(AppFlavor.text("粘贴或输入任意内容，然后选择上方技能处理", "Paste or type any text, then choose an action above"))
+                            .font(.system(size: 13))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 8)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .frame(height: 92)
+                .padding(7)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+
+                Text(AppFlavor.text("可直接朗读，也可翻译、解释、审校或使用自定义技能。", "Read it directly, or translate, explain, proofread, or use a custom action."))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
 
         case .captureNotice(let source, let text):
             HStack(spacing: 9) {
@@ -255,7 +320,7 @@ struct ActionPanelView: View {
                 if !compact {
                     ScrollView {
                         Text(text)
-                            .font(.system(size: 13))
+                            .font(.system(size: resultFontSize))
                             .lineSpacing(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
@@ -268,6 +333,75 @@ struct ActionPanelView: View {
                 }
 
                 controls(text: text, replay: replay, archived: archived)
+            }
+            .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 12)
+
+        case .compare(let action, let icon, let results, let archived, let contextUsed):
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text(AppFlavor.text("比较 · \(action)", "Compare · \(action)"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if contextUsed {
+                        Label(AppFlavor.text("已附带上下文", "Context included"), systemImage: "doc.text.magnifyingglass")
+                            .font(.system(size: 10, weight: .medium))
+                            .labelStyle(.titleAndIcon)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    }
+                    Spacer()
+                    if archived {
+                        Text(AppFlavor.text("已留档", "Saved")).font(.system(size: 10)).foregroundStyle(.tertiary)
+                    }
+                }
+
+                Picker("", selection: compareSelectionBinding(results)) {
+                    ForEach(results) { result in
+                        Text(result.label).tag(result.id)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                let selected = selectedCompareResult(in: results)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Text(selected?.model ?? "")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                        Spacer()
+                        if selected?.isLoading == true {
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                    if let error = selected?.error {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.orange)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ScrollView {
+                            Text(selected?.text.isEmpty == true ? AppFlavor.text("等待结果…", "Waiting for result...") : (selected?.text ?? ""))
+                                .font(.system(size: resultFontSize))
+                                .lineSpacing(2)
+                                .foregroundStyle(selected?.text.isEmpty == true ? .secondary : .primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(height: 190)
+                    }
+                }
+                .padding(9)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+
+                compareControls(text: compareCombinedText(results), archived: archived)
             }
             .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 12)
 
@@ -316,6 +450,47 @@ struct ActionPanelView: View {
                 Button { model.onArchive?() } label: { Label(AppFlavor.text("留档", "Save"), systemImage: "tray.and.arrow.down.fill") }
                     .buttonStyle(.bordered).tint(.accentColor)
             }
+            if replay && model.canCompare {
+                Button { model.onCompare?() } label: {
+                    Image(systemName: "rectangle.split.3x1")
+                }
+                .buttonStyle(.bordered)
+                .help(AppFlavor.text("比较模型结果", "Compare Models"))
+            }
+            Spacer()
+            Button { model.onClose?() } label: { Image(systemName: "xmark") }
+                .buttonStyle(.bordered).help(AppFlavor.text("关闭", "Close"))
+        }
+        .controlSize(.small)
+        .buttonBorderShape(.capsule)
+    }
+
+    private func compareControls(text: String, archived: Bool) -> some View {
+        HStack(spacing: 7) {
+            Button { model.onStop?() } label: { Image(systemName: "stop.fill") }
+                .buttonStyle(.bordered)
+                .help(AppFlavor.text("停止", "Stop"))
+            Button {
+                if model.onCopyResult?(text) == true {
+                    presentResultCopyBubble()
+                }
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .help(AppFlavor.text("复制全部比较结果", "Copy All Compare Results"))
+            .popover(isPresented: $showResultCopyBubble, arrowEdge: .bottom) {
+                CopyArchiveBubble(archived: archived || resultCopyArchived,
+                                  canArchive: !archived && !resultCopyArchived) {
+                    model.onArchive?()
+                    resultCopyArchived = true
+                    dismissResultCopyBubble(after: 0.65)
+                }
+            }
+            if !archived {
+                Button { model.onArchive?() } label: { Label(AppFlavor.text("留档", "Save"), systemImage: "tray.and.arrow.down.fill") }
+                    .buttonStyle(.bordered).tint(.accentColor)
+            }
             Spacer()
             Button { model.onClose?() } label: { Image(systemName: "xmark") }
                 .buttonStyle(.bordered).help(AppFlavor.text("关闭", "Close"))
@@ -335,6 +510,46 @@ struct ActionPanelView: View {
         .toggleStyle(.checkbox)
         .help(AppFlavor.text("生成完成后自动朗读 AI 结果", "Read AI results automatically when generation completes"))
         .fixedSize()
+    }
+
+    private var inputBinding: Binding<String> {
+        Binding(
+            get: { model.inputText },
+            set: { value in
+                model.inputText = value
+                model.onInputChanged?(value)
+            }
+        )
+    }
+
+    private func compareSelectionBinding(_ results: [CompareModelResult]) -> Binding<String> {
+        Binding(
+            get: {
+                if let selected = model.selectedCompareID,
+                   results.contains(where: { $0.id == selected }) {
+                    return selected
+                }
+                return results.first?.id ?? ""
+            },
+            set: { model.selectedCompareID = $0 }
+        )
+    }
+
+    private func selectedCompareResult(in results: [CompareModelResult]) -> CompareModelResult? {
+        if let selected = model.selectedCompareID,
+           let result = results.first(where: { $0.id == selected }) {
+            return result
+        }
+        return results.first
+    }
+
+    private func compareCombinedText(_ results: [CompareModelResult]) -> String {
+        results.map { result in
+            let body = result.error.map { AppFlavor.text("出错：\($0)", "Error: \($0)") }
+                ?? (result.text.isEmpty ? AppFlavor.text("等待结果…", "Waiting for result...") : result.text)
+            return "\(result.label) · \(result.model)\n\(body)"
+        }
+        .joined(separator: "\n\n---\n\n")
     }
 
     private func presentOriginalCopyBubble() {

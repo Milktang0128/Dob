@@ -141,6 +141,15 @@ private struct EntryCard: View {
                         .background(Capsule().fill(Color.primary.opacity(0.07)))
                 }
 
+                if entry.comparison != nil {
+                    Label(AppFlavor.text("比较", "Compare"), systemImage: "rectangle.split.3x1")
+                        .font(.system(size: 10, weight: .medium))
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(Color.primary.opacity(0.07)))
+                }
+
                 Text(entry.sourceApp).font(.system(size: 11)).foregroundStyle(.secondary)
                 Text(Self.df.string(from: entry.date)).font(.system(size: 11)).foregroundStyle(.tertiary)
                 Spacer()
@@ -163,7 +172,7 @@ private struct EntryCard: View {
 
             if let context = entry.contextExcerpt, !context.isEmpty {
                 DisclosureGroup(AppFlavor.text("上下文摘录", "Context excerpt"), isExpanded: $showContext) {
-                    Text(context)
+                    Text(ContextExcerptFormatter.highlightedAttributedString(context))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)

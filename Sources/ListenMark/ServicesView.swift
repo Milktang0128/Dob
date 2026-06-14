@@ -1,0 +1,555 @@
+import SwiftUI
+import AVFoundation
+
+struct ServicesView: View {
+    private static var volcanoVoiceListURL: URL {
+        URL(string: AppFlavor.text("https://www.volcengine.com/docs/6561/1257544?lang=zh",
+                                   "https://www.volcengine.com/docs/6561/1257544"))!
+    }
+
+    private enum Category: String, CaseIterable, Identifiable, Hashable {
+        case text
+        case recognition
+        case speech
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .text: return AppFlavor.text("文本处理", "Text")
+            case .recognition: return AppFlavor.text("文本识别", "OCR")
+            case .speech: return AppFlavor.text("语音合成", "Speech")
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .text: return "sparkles"
+            case .recognition: return "viewfinder"
+            case .speech: return "speaker.wave.2.fill"
+            }
+        }
+    }
+
+    private enum Selection: String {
+        case defaultModel
+        case compare1
+        case compare2
+        case systemOCR
+        case localSpeech
+        case volcanoSpeech
+    }
+
+    @State private var category: Category = .text
+    @State private var selection: Selection = .defaultModel
+
+    @AppStorage("llmBaseURL") private var llmBaseURL = Settings.recommendedLLMBaseURL
+    @AppStorage("deepseekKey") private var llmAPIKey = ""
+    @AppStorage("deepseekModel") private var llmModel = Settings.recommendedLLMModel
+    @AppStorage("compareProvider1Enabled") private var compareProvider1Enabled = false
+    @AppStorage("compareProvider1Label") private var compareProvider1Label = AppFlavor.text("备选 A", "Alt A")
+    @AppStorage("compareProvider1BaseURL") private var compareProvider1BaseURL = Settings.recommendedLLMBaseURL
+    @AppStorage("compareProvider1APIKey") private var compareProvider1APIKey = ""
+    @AppStorage("compareProvider1Model") private var compareProvider1Model = ""
+    @AppStorage("compareProvider2Enabled") private var compareProvider2Enabled = false
+    @AppStorage("compareProvider2Label") private var compareProvider2Label = AppFlavor.text("备选 B", "Alt B")
+    @AppStorage("compareProvider2BaseURL") private var compareProvider2BaseURL = Settings.recommendedLLMBaseURL
+    @AppStorage("compareProvider2APIKey") private var compareProvider2APIKey = ""
+    @AppStorage("compareProvider2Model") private var compareProvider2Model = ""
+
+    @AppStorage("ocrAutoRunLastAction") private var ocrAutoRunLastAction = true
+    @AppStorage("ocrHkDisplay") private var ocrHkDisplay = "⌃⇧O"
+    @AppStorage("silentOcrHkDisplay") private var silentOcrHkDisplay = "⌃⇧C"
+
+    @AppStorage("ttsEngine") private var ttsEngine = AppFlavor.text("volcano", "local")
+    @AppStorage("volcAppId") private var volcAppId = ""
+    @AppStorage("volcToken") private var volcToken = ""
+    @AppStorage("volcCluster") private var volcCluster = "volcano_tts"
+    @AppStorage("volcVoice") private var volcVoice = AppFlavor.text("zh_female_cancan_uranus_bigtts", "en_female_dacey_uranus_bigtts")
+    @AppStorage("volcSpeed") private var volcSpeed = 1.0
+    @AppStorage("rate") private var rate = Double(AVSpeechUtteranceDefaultSpeechRate)
+
+    private var compareCount: Int {
+        (compareProvider1Enabled ? 1 : 0) + (compareProvider2Enabled ? 1 : 0)
+    }
+
+    private var volcanoConfigured: Bool {
+        !volcAppId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !volcToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            categoryPicker
+            Divider()
+            HStack(spacing: 0) {
+                serviceList
+                    .frame(width: 286)
+                Divider()
+                detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(minWidth: 860, minHeight: 600)
+        .onChange(of: category) { _, newValue in
+            selection = defaultSelection(for: newValue)
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(AppFlavor.text("服务管理", "Services"))
+                    .font(.system(size: 24, weight: .semibold))
+                Text(AppFlavor.text("集中管理文本处理、OCR 和语音合成服务。开启的服务会被技能、比较和朗读流程使用。",
+                                    "Manage text, OCR, and speech services in one place. Enabled services are used by actions, compare, and reading."))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                NotificationCenter.default.post(name: .gebwOpenSettings, object: nil)
+            } label: {
+                Label(AppFlavor.text("偏好设置", "Preferences"), systemImage: "slider.horizontal.3")
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
+    }
+
+    private var categoryPicker: some View {
+        Picker("", selection: $category) {
+            ForEach(Category.allCases) { item in
+                Label(item.title, systemImage: item.icon).tag(item)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 22)
+        .padding(.bottom, 16)
+    }
+
+    private var serviceList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                switch category {
+                case .text:
+                    row(title: AppFlavor.text("默认模型", "Default Model"),
+                        subtitle: llmModel.isEmpty ? Settings.recommendedLLMModel : llmModel,
+                        icon: "sparkles",
+                        badge: llmAPIKey.isEmpty ? AppFlavor.text("未配置", "Missing Key") : AppFlavor.text("启用", "Enabled"),
+                        selected: selection == .defaultModel) {
+                        selection = .defaultModel
+                    }
+                    row(title: compareProvider1Label,
+                        subtitle: compareProvider1Model.isEmpty ? AppFlavor.text("未填写模型名", "Model is missing") : compareProvider1Model,
+                        icon: "rectangle.2.swap",
+                        badge: compareProvider1Enabled ? AppFlavor.text("比较", "Compare") : AppFlavor.text("关闭", "Off"),
+                        enabled: $compareProvider1Enabled,
+                        selected: selection == .compare1) {
+                        selection = .compare1
+                    }
+                    row(title: compareProvider2Label,
+                        subtitle: compareProvider2Model.isEmpty ? AppFlavor.text("未填写模型名", "Model is missing") : compareProvider2Model,
+                        icon: "rectangle.2.swap",
+                        badge: compareProvider2Enabled ? AppFlavor.text("比较", "Compare") : AppFlavor.text("关闭", "Off"),
+                        enabled: $compareProvider2Enabled,
+                        selected: selection == .compare2) {
+                        selection = .compare2
+                    }
+                case .recognition:
+                    row(title: AppFlavor.text("系统 OCR", "System OCR"),
+                        subtitle: AppFlavor.text("Apple Vision，本地识别", "Apple Vision, local"),
+                        icon: "viewfinder",
+                        badge: AppFlavor.text("内置", "Built-in"),
+                        selected: selection == .systemOCR) {
+                        selection = .systemOCR
+                    }
+                case .speech:
+                    row(title: AppFlavor.text("macOS 本地语音", "macOS Speech"),
+                        subtitle: AppFlavor.text("离线可用，质量取决于系统声音", "Offline, uses system voices"),
+                        icon: "macwindow",
+                        badge: ttsEngine == "local" ? AppFlavor.text("正在使用", "Active") : AppFlavor.text("备用", "Fallback"),
+                        selected: selection == .localSpeech) {
+                        selection = .localSpeech
+                    }
+                    row(title: AppFlavor.text("火山引擎 TTS", "Volcengine TTS"),
+                        subtitle: volcVoice,
+                        icon: "waveform",
+                        badge: ttsEngine == "volcano" ? AppFlavor.text("正在使用", "Active") : AppFlavor.text("关闭", "Off"),
+                        selected: selection == .volcanoSpeech) {
+                        selection = .volcanoSpeech
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                switch selection {
+                case .defaultModel:
+                    defaultModelDetail
+                case .compare1:
+                    compareModelDetail(title: AppFlavor.text("备选比较模型 A", "Alternate Compare Model A"),
+                                       enabled: $compareProvider1Enabled,
+                                       label: $compareProvider1Label,
+                                       baseURL: $compareProvider1BaseURL,
+                                       apiKey: $compareProvider1APIKey,
+                                       model: $compareProvider1Model)
+                case .compare2:
+                    compareModelDetail(title: AppFlavor.text("备选比较模型 B", "Alternate Compare Model B"),
+                                       enabled: $compareProvider2Enabled,
+                                       label: $compareProvider2Label,
+                                       baseURL: $compareProvider2BaseURL,
+                                       apiKey: $compareProvider2APIKey,
+                                       model: $compareProvider2Model)
+                case .systemOCR:
+                    ocrDetail
+                case .localSpeech:
+                    localSpeechDetail
+                case .volcanoSpeech:
+                    volcanoSpeechDetail
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var defaultModelDetail: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: AppFlavor.text("默认模型", "Default Model"),
+                         subtitle: AppFlavor.text("解释、翻译、提炼、自定义技能和提示词优化默认使用这个 OpenAI 兼容服务。比较功能也会把它作为基准结果。",
+                                                  "Explain, Translate, Summarize, custom actions, and prompt optimization use this OpenAI-compatible service by default. Compare uses it as the baseline."),
+                         icon: "sparkles",
+                         status: llmAPIKey.isEmpty ? AppFlavor.text("未配置", "Missing Key") : AppFlavor.text("已配置", "Configured"))
+            presetGrid { preset in
+                llmBaseURL = preset.baseURL
+                llmModel = preset.model
+            }
+            serviceFields {
+                TextField(AppFlavor.text("Base URL，例如 https://api.deepseek.com 或 https://api.openai.com/v1",
+                                         "Base URL, e.g. https://api.deepseek.com or https://api.openai.com/v1"),
+                          text: $llmBaseURL)
+                SecureField(AppFlavor.text("API Key（Bearer Token）", "API Key (Bearer token)"), text: $llmAPIKey)
+                TextField(AppFlavor.text("模型名", "Model"), text: $llmModel)
+            }
+            HStack {
+                Link(AppFlavor.text("前往 DeepSeek 获取 API Key ↗", "Get a DeepSeek API Key ↗"),
+                     destination: URL(string: "https://platform.deepseek.com/api_keys")!)
+                    .font(.caption)
+                Spacer()
+                Button(AppFlavor.text("恢复 DeepSeek 推荐", "Use DeepSeek Defaults")) {
+                    llmBaseURL = Settings.recommendedLLMBaseURL
+                    llmModel = Settings.recommendedLLMModel
+                }
+            }
+            helperText(AppFlavor.text("DeepSeek 是预填推荐。你也可以使用任何 OpenAI Chat Completions 兼容接口；如果 Base URL 已经以 /chat/completions 结尾，会按完整地址调用。",
+                                      "DeepSeek is the prefilled recommendation. Any OpenAI Chat Completions-compatible endpoint works; a full /chat/completions URL is used as-is."))
+        }
+    }
+
+    private func compareModelDetail(title: String,
+                                    enabled: Binding<Bool>,
+                                    label: Binding<String>,
+                                    baseURL: Binding<String>,
+                                    apiKey: Binding<String>,
+                                    model: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: title,
+                         subtitle: AppFlavor.text("比较时会和默认模型并行调用。最多启用两个备选服务，总计最多三个结果。",
+                                                  "Compare calls this alongside the default model. Up to two alternates are supported for three total results."),
+                         icon: "rectangle.2.swap",
+                         status: enabled.wrappedValue ? AppFlavor.text("已启用", "Enabled") : AppFlavor.text("已关闭", "Off"))
+            presetGrid { preset in
+                label.wrappedValue = preset.name
+                baseURL.wrappedValue = preset.baseURL
+                model.wrappedValue = preset.model
+                enabled.wrappedValue = true
+            }
+            Toggle(AppFlavor.text("启用此比较服务", "Enable this compare service"), isOn: enabled)
+                .toggleStyle(.switch)
+            serviceFields {
+                TextField(AppFlavor.text("显示名称", "Display name"), text: label)
+                TextField(AppFlavor.text("Base URL", "Base URL"), text: baseURL)
+                SecureField(AppFlavor.text("API Key（Bearer Token）", "API Key (Bearer token)"), text: apiKey)
+                TextField(AppFlavor.text("模型名", "Model"), text: model)
+            }
+            helperText(AppFlavor.text("比较模型不会继承默认模型的 API Key。这样可以清楚地区分不同供应商、费用和隐私边界。",
+                                      "Compare models do not inherit the default API key, keeping provider, cost, and privacy boundaries explicit."))
+        }
+    }
+
+    private var ocrDetail: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: AppFlavor.text("系统 OCR", "System OCR"),
+                         subtitle: AppFlavor.text("使用 macOS Apple Vision 在本机识别屏幕选区，适合无法直接取词或禁止复制的场景。",
+                                                  "Uses macOS Apple Vision locally for screen-region OCR when direct capture or copying is unavailable."),
+                         icon: "viewfinder",
+                         status: AppFlavor.text("内置", "Built-in"))
+            VStack(alignment: .leading, spacing: 12) {
+                factRow(AppFlavor.text("屏幕 OCR 快捷键", "Screen OCR hotkey"), value: ocrHkDisplay)
+                factRow(AppFlavor.text("静默 OCR 复制", "Silent OCR copy"), value: silentOcrHkDisplay)
+                Toggle(AppFlavor.text("OCR 后自动执行最近一次技能", "Run the most recent action after OCR"), isOn: $ocrAutoRunLastAction)
+                    .toggleStyle(.switch)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.035)))
+            helperText(AppFlavor.text("OCR 服务本身不需要密钥。快捷键、静默复制和自动执行属于取词工作流，也可以在偏好设置里调整。",
+                                      "OCR itself needs no key. Hotkeys, silent copy, and auto-run behavior are capture workflow preferences and can also be adjusted in Preferences."))
+        }
+    }
+
+    private var localSpeechDetail: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: AppFlavor.text("macOS 本地语音", "macOS Speech"),
+                         subtitle: AppFlavor.text("不需要网络或密钥。火山引擎未配置或失败时，也会回退到本地语音。",
+                                                  "No network or key required. This is also the fallback when Volcengine is not configured or fails."),
+                         icon: "macwindow",
+                         status: ttsEngine == "local" ? AppFlavor.text("正在使用", "Active") : AppFlavor.text("备用", "Fallback"))
+            Button {
+                ttsEngine = "local"
+            } label: {
+                Label(AppFlavor.text("设为当前语音服务", "Use as current speech service"), systemImage: "checkmark.circle")
+            }
+            .disabled(ttsEngine == "local")
+            HStack {
+                Text(AppFlavor.text("语速", "Speed"))
+                Slider(value: $rate, in: 0.3...0.7)
+                Text(String(format: "%.2f", rate))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 46, alignment: .trailing)
+            }
+            Button(AppFlavor.text("试听", "Test Voice")) {
+                Settings.speechRate = Float(rate)
+                Speaker.shared.speak(AppFlavor.text("过耳不忘，这是本地语音的试听效果。", "ListenMark. This is the local speech voice."))
+            }
+        }
+    }
+
+    private var volcanoSpeechDetail: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: AppFlavor.text("火山引擎 TTS", "Volcengine TTS"),
+                         subtitle: AppFlavor.text("适合中文朗读质量要求更高的场景。需要在火山控制台开通语音服务并填写 App ID 与 Token。",
+                                                  "Useful when higher-quality speech is needed. Requires Volcengine speech service, App ID, and Token."),
+                         icon: "waveform",
+                         status: volcanoConfigured ? AppFlavor.text("已配置", "Configured") : AppFlavor.text("未配置", "Missing Key"))
+            Button {
+                ttsEngine = "volcano"
+            } label: {
+                Label(AppFlavor.text("设为当前语音服务", "Use as current speech service"), systemImage: "checkmark.circle")
+            }
+            .disabled(ttsEngine == "volcano")
+            serviceFields {
+                SecureField("App ID", text: $volcAppId)
+                SecureField("Access Token", text: $volcToken)
+                Picker(AppFlavor.text("常用音色", "Common voice"), selection: $volcVoice) {
+                    ForEach(VolcanoVoices.all) { voice in
+                        Text(voice.name).tag(voice.id)
+                    }
+                    if !VolcanoVoices.all.contains(where: { $0.id == volcVoice }) {
+                        Text(AppFlavor.text("自定义（\(volcVoice)）", "Custom (\(volcVoice))")).tag(volcVoice)
+                    }
+                }
+                TextField(AppFlavor.text("自定义 voice_type（可选）", "Custom voice_type (optional)"), text: $volcVoice)
+                TextField("Cluster", text: $volcCluster)
+                HStack {
+                    Text(AppFlavor.text("语速", "Speed"))
+                    Slider(value: $volcSpeed, in: 0.5...2.0)
+                    Text(String(format: "%.1fx", volcSpeed))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+            HStack {
+                Link(AppFlavor.text("火山语音控制台 ↗", "Volcengine speech console ↗"),
+                     destination: URL(string: "https://console.volcengine.com/speech/app")!)
+                Spacer()
+                Link(AppFlavor.text("官方完整音色列表 ↗", "Full official voice list ↗"),
+                     destination: Self.volcanoVoiceListURL)
+            }
+            .font(.caption)
+            if !volcanoConfigured {
+                helperText(AppFlavor.text("未填 App ID / Token 时，朗读会自动回退到 macOS 本地语音。",
+                                          "When App ID or Token is missing, reading automatically falls back to macOS Speech."))
+                    .foregroundStyle(.orange)
+            }
+            Button(AppFlavor.text("试听", "Test Voice")) {
+                Settings.speechRate = Float(rate)
+                Speaker.shared.speak(AppFlavor.text("过耳不忘，这是当前火山音色的试听效果。", "ListenMark. This is the current Volcengine voice."))
+            }
+        }
+    }
+
+    private func row(title: String,
+                     subtitle: String,
+                     icon: String,
+                     badge: String,
+                     enabled: Binding<Bool>? = nil,
+                     selected: Bool,
+                     action: @escaping () -> Void) -> some View {
+        HStack(spacing: 10) {
+            Button(action: action) {
+                HStack(spacing: 10) {
+                    Image(systemName: icon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Text(badge)
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.07)))
+                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if let enabled {
+                Toggle("", isOn: enabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(selected ? Color.accentColor.opacity(0.10) : Color.primary.opacity(0.035)))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(selected ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.06), lineWidth: 0.5)
+        }
+    }
+
+    private func detailHeader(title: String, subtitle: String, icon: String, status: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 34)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.title2.weight(.semibold))
+                    Text(status)
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                        .foregroundStyle(.secondary)
+                }
+                Text(subtitle)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func serviceFields<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            content()
+        }
+        .textFieldStyle(.roundedBorder)
+    }
+
+    private func presetGrid(onApply: @escaping (LLMServicePreset) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(AppFlavor.text("服务商预设", "Provider Presets"))
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Menu {
+                    ForEach(LLMServicePresets.all) { preset in
+                        if let url = preset.keyURL {
+                            Link(preset.name, destination: url)
+                        }
+                    }
+                } label: {
+                    Label(AppFlavor.text("获取 Key", "Get Key"), systemImage: "key")
+                }
+                .menuStyle(.button)
+                .font(.caption)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 126), spacing: 8)], alignment: .leading, spacing: 8) {
+                ForEach(LLMServicePresets.all) { preset in
+                    Button {
+                        onApply(preset)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(preset.name)
+                                .font(.system(size: 12, weight: .semibold))
+                                .lineLimit(1)
+                            Text(preset.model)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Text(preset.note)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 7)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.04)))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help("\(preset.baseURL) · \(preset.model)")
+                }
+            }
+            helperText(AppFlavor.text("点击预设只会填充 Base URL 和模型名，不会覆盖 API Key；模型名仍可按账号权限手动修改。",
+                                      "A preset fills Base URL and model only; it does not overwrite your API key. You can still edit the model name."))
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.025)))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+        }
+    }
+
+    private func factRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func helperText(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func defaultSelection(for category: Category) -> Selection {
+        switch category {
+        case .text: return .defaultModel
+        case .recognition: return .systemOCR
+        case .speech: return ttsEngine == "volcano" ? .volcanoSpeech : .localSpeech
+        }
+    }
+}

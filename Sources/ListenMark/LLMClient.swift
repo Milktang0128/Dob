@@ -11,16 +11,17 @@ enum LLMError: Error {
 /// Takes a system prompt (from the action) + the selected text.
 enum LLMClient {
 
-    static func complete(prompt: String, text: String) async throws -> String {
-        let key = Settings.llmAPIKey
+    static func complete(prompt: String, text: String, provider: LLMProviderConfig? = nil) async throws -> String {
+        let config = provider ?? Settings.defaultLLMProvider
+        let key = config.apiKey
         guard !key.isEmpty else { throw LLMError.noKey }
-        guard let url = Settings.llmChatCompletionsURL else { throw LLMError.badURL }
+        guard let url = chatCompletionsURL(baseURL: config.baseURL) else { throw LLMError.badURL }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: requestBody(prompt: prompt, text: text, stream: false))
+        req.httpBody = try JSONSerialization.data(withJSONObject: requestBody(prompt: prompt, text: text, stream: false, model: config.model))
 
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw LLMError.badResponse }
@@ -38,18 +39,22 @@ enum LLMClient {
 
     /// Streaming variant — yields text deltas as they arrive (SSE).
     static func stream(prompt: String, text: String) -> AsyncThrowingStream<String, Error> {
+        stream(prompt: prompt, text: text, provider: Settings.defaultLLMProvider)
+    }
+
+    static func stream(prompt: String, text: String, provider: LLMProviderConfig) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let key = Settings.llmAPIKey
+                    let key = provider.apiKey
                     guard !key.isEmpty else { throw LLMError.noKey }
-                    guard let url = Settings.llmChatCompletionsURL else { throw LLMError.badURL }
+                    guard let url = chatCompletionsURL(baseURL: provider.baseURL) else { throw LLMError.badURL }
 
                     var req = URLRequest(url: url)
                     req.httpMethod = "POST"
                     req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
                     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    req.httpBody = try JSONSerialization.data(withJSONObject: requestBody(prompt: prompt, text: text, stream: true))
+                    req.httpBody = try JSONSerialization.data(withJSONObject: requestBody(prompt: prompt, text: text, stream: true, model: provider.model))
 
                     let (bytes, resp) = try await URLSession.shared.bytes(for: req)
                     guard let http = resp as? HTTPURLResponse else { throw LLMError.badResponse }
@@ -86,9 +91,19 @@ enum LLMClient {
         )
     }
 
-    private static func requestBody(prompt: String, text: String, stream: Bool) -> [String: Any] {
+    private static func chatCompletionsURL(baseURL: String) -> URL? {
+        let raw = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        let normalized = raw.hasSuffix("/") ? String(raw.dropLast()) : raw
+        if normalized.lowercased().hasSuffix("/chat/completions") {
+            return URL(string: normalized)
+        }
+        return URL(string: normalized + "/chat/completions")
+    }
+
+    private static func requestBody(prompt: String, text: String, stream: Bool, model: String) -> [String: Any] {
         [
-            "model": Settings.llmModel,
+            "model": model,
             "messages": [
                 ["role": "system", "content": prompt + "\n\n" + plainTextRule],
                 ["role": "user", "content": text]

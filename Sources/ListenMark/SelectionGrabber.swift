@@ -53,6 +53,10 @@ enum SelectionGrabber {
     static func grabAsync(allowCopyFallback: Bool = true, _ completion: @escaping (String?) -> Void) {
         if let ax = axSelectedText() { completion(ax); return }
         guard allowCopyFallback else { completion(nil); return }
+        copySelectedTextAsync(completion)
+    }
+
+    static func copySelectedTextAsync(_ completion: @escaping (String?) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let text = copyGrab()
             DispatchQueue.main.async { completion(text) }
@@ -61,7 +65,7 @@ enum SelectionGrabber {
 
     private static func copyGrab() -> String? {
         let pb = NSPasteboard.general
-        let previous = pb.string(forType: .string)
+        let snapshot = PasteboardSnapshot(pb)
         let before = pb.changeCount
 
         sendCopy()
@@ -76,11 +80,38 @@ enum SelectionGrabber {
             usleep(15_000)
         }
 
-        if let previous {
-            pb.clearContents()
-            pb.setString(previous, forType: .string)
-        }
+        snapshot.restore(to: pb)
         return captured?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private struct PasteboardSnapshot {
+        let items: [[NSPasteboard.PasteboardType: Data]]
+
+        init(_ pasteboard: NSPasteboard) {
+            items = (pasteboard.pasteboardItems ?? []).compactMap { item in
+                var dataByType: [NSPasteboard.PasteboardType: Data] = [:]
+                for type in item.types {
+                    if let data = item.data(forType: type) {
+                        dataByType[type] = data
+                    }
+                }
+                return dataByType.isEmpty ? nil : dataByType
+            }
+        }
+
+        func restore(to pasteboard: NSPasteboard) {
+            pasteboard.clearContents()
+            let restoredItems = items.map { dataByType in
+                let item = NSPasteboardItem()
+                for (type, data) in dataByType {
+                    item.setData(data, forType: type)
+                }
+                return item
+            }
+            if !restoredItems.isEmpty {
+                pasteboard.writeObjects(restoredItems)
+            }
+        }
     }
 
     private static func sendCopy() {
