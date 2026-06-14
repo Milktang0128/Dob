@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: NSWindow?
     private var actionsWindow: NSWindow?
     private var reviewWindow: NSWindow?
+    private var aboutWindow: NSWindow?
     private weak var reviewMenuItem: NSMenuItem?
 
     private var currentText = ""
@@ -102,6 +103,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
+        let aboutItem = NSMenuItem(title: AppFlavor.text("关于 \(AppFlavor.appName)", "About \(AppFlavor.appName)"),
+                                   action: #selector(openAbout), keyEquivalent: "")
+        aboutItem.target = self
+        appMenu.addItem(aboutItem)
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: AppFlavor.text("隐藏 \(AppFlavor.appName)", "Hide \(AppFlavor.appName)"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: AppFlavor.text("退出 \(AppFlavor.appName)", "Quit \(AppFlavor.appName)"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -216,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(menu, AppFlavor.text("编辑技能…", "Edit Actions…"), #selector(openActions))
         add(menu, AppFlavor.text("设置…", "Settings…"), #selector(openSettings))
         add(menu, AppFlavor.text("检查更新…", "Check for Updates…"), #selector(checkForUpdates))
+        add(menu, AppFlavor.text("关于 \(AppFlavor.appName)…", "About \(AppFlavor.appName)…"), #selector(openAbout))
         menu.addItem(.separator())
         add(menu, AppFlavor.text("辅助功能权限设置…", "Accessibility Settings…"), #selector(openAXPrefs))
         add(menu, AppFlavor.text("打开档案文件夹", "Open Archive Folder"), #selector(openArchiveFolder))
@@ -592,6 +599,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openReview() {
         showWindow(&reviewWindow, size: NSSize(width: 520, height: 600), title: AppFlavor.text("\(AppFlavor.appName) · 今日回响", "\(AppFlavor.appName) · Review")) { ReviewView() }
+    }
+
+    @objc private func openAbout() {
+        showWindow(&aboutWindow, size: NSSize(width: 360, height: 300), title: AppFlavor.text("关于 \(AppFlavor.appName)", "About \(AppFlavor.appName)")) { AboutView() }
     }
 
     @objc private func openAXPrefs() {
