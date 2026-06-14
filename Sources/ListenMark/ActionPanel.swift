@@ -42,6 +42,7 @@ final class ActionPanel: NSPanel {
     private func height(for phase: PanelModel.Phase) -> CGFloat {
         switch phase {
         case .idle: return barHeight
+        case .captureNotice: return barHeight + 58
         case .loading: return barHeight + 48
         case .error: return barHeight + 56
         case .result(_, _, let text, _, _, let compact, _):

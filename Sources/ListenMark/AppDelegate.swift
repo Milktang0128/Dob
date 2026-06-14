@@ -289,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.pendingEntry = nil
             self.lastAutoText = clean
             self.showPanel()
+            self.panel.model.phase = .captureNotice(source: AppFlavor.text("OCR", "OCR"), text: clean)
         }
     }
 

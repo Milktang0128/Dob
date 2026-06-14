@@ -52,6 +52,7 @@ enum ActionResultLayout {
 final class PanelModel: ObservableObject {
     enum Phase: Equatable {
         case idle
+        case captureNotice(source: String, text: String)
         case loading(String)                                                              // action name
         case result(action: String, icon: String, text: String, replay: Bool,
                     archived: Bool, compact: Bool, contextUsed: Bool)
@@ -195,6 +196,26 @@ struct ActionPanelView: View {
         switch model.phase {
         case .idle:
             EmptyView()
+
+        case .captureNotice(let source, let text):
+            HStack(spacing: 9) {
+                Image(systemName: "viewfinder.rectangular")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(AppFlavor.text("\(source) 已识别", "\(source) recognized"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text(AppFlavor.text("已取得 \(text.count) 字，选择上方技能继续处理", "\(text.count) characters captured. Choose an action above to continue."))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.accentColor.opacity(0.035))
 
         case .loading(let label):
             HStack(spacing: 9) {

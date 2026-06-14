@@ -26,21 +26,38 @@ final class ScreenOCR {
 
             let window = OCRSelectionWindow(screen: screen)
             let view = OCRSelectionView(screen: screen) { [weak self, weak window] rect in
-                window?.orderOut(nil)
-                self?.window = nil
                 guard let rect else {
+                    window?.orderOut(nil)
+                    self?.window = nil
                     completion(nil)
                     return
                 }
+                let selectedAt = Date()
                 DispatchQueue.global(qos: .userInitiated).async {
                     let text = Self.recognizeText(in: rect, on: screen)
-                    DispatchQueue.main.async { completion(text) }
+                    DispatchQueue.main.async {
+                        let minimumFeedbackDuration: TimeInterval = 0.32
+                        let elapsed = Date().timeIntervalSince(selectedAt)
+                        let close = {
+                            window?.orderOut(nil)
+                            self?.window = nil
+                            completion(text)
+                        }
+                        if elapsed < minimumFeedbackDuration {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + minimumFeedbackDuration - elapsed, execute: close)
+                        } else {
+                            close()
+                        }
+                    }
                 }
             }
             window.contentView = view
             self.window = window
-            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            window.orderFrontRegardless()
+            window.makeKey()
             window.makeFirstResponder(view)
+            NSCursor.crosshair.set()
         }
     }
 
@@ -100,6 +117,8 @@ private final class OCRSelectionView: NSView {
     private let onComplete: (CGRect?) -> Void
     private var startPoint: NSPoint?
     private var currentPoint: NSPoint?
+    private var confirmedRect: NSRect?
+    private var isRecognizing = false
 
     init(screen: NSScreen, onComplete: @escaping (CGRect?) -> Void) {
         self.screen = screen
@@ -113,29 +132,42 @@ private final class OCRSelectionView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .crosshair)
     }
 
     override func mouseDown(with event: NSEvent) {
+        guard !isRecognizing else { return }
         startPoint = event.locationInWindow
         currentPoint = startPoint
+        confirmedRect = nil
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard !isRecognizing else { return }
         currentPoint = event.locationInWindow
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard !isRecognizing else { return }
         currentPoint = event.locationInWindow
         let rect = selectionRect
-        onComplete(rect.width >= 8 && rect.height >= 8 ? rect : nil)
+        guard rect.width >= 8 && rect.height >= 8 else {
+            onComplete(nil)
+            return
+        }
+        confirmedRect = rect
+        isRecognizing = true
+        needsDisplay = true
+        onComplete(rect)
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
+        if event.keyCode == 53, !isRecognizing {
             onComplete(nil)
         } else {
             super.keyDown(with: event)
@@ -144,18 +176,28 @@ private final class OCRSelectionView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard let startPoint, let currentPoint else { return }
-        let rect = NSRect(x: min(startPoint.x, currentPoint.x),
+        let rect: NSRect
+        if let confirmedRect {
+            rect = confirmedRect
+        } else if let startPoint, let currentPoint {
+            rect = NSRect(x: min(startPoint.x, currentPoint.x),
                           y: min(startPoint.y, currentPoint.y),
                           width: abs(startPoint.x - currentPoint.x),
                           height: abs(startPoint.y - currentPoint.y))
+        } else {
+            return
+        }
 
-        NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
+        NSColor.controlAccentColor.withAlphaComponent(isRecognizing ? 0.20 : 0.16).setFill()
         rect.fill()
         NSColor.controlAccentColor.setStroke()
         let path = NSBezierPath(rect: rect)
-        path.lineWidth = 2
+        path.lineWidth = isRecognizing ? 3 : 2
         path.stroke()
+
+        if isRecognizing {
+            drawStatusPill(near: rect)
+        }
     }
 
     private var selectionRect: CGRect {
@@ -165,5 +207,32 @@ private final class OCRSelectionView: NSView {
                       width: abs(startPoint.x - currentPoint.x),
                       height: abs(startPoint.y - currentPoint.y))
             .intersection(CGRect(origin: .zero, size: screen.frame.size))
+    }
+
+    private func drawStatusPill(near rect: NSRect) {
+        let title = AppFlavor.text("已框选，正在识别…", "Selection captured, recognizing...")
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor.white
+        ]
+        let textSize = (title as NSString).size(withAttributes: attributes)
+        let pillSize = NSSize(width: textSize.width + 24, height: textSize.height + 12)
+        var origin = NSPoint(x: rect.minX, y: rect.maxY + 8)
+        if origin.y + pillSize.height > bounds.maxY {
+            origin.y = rect.minY - pillSize.height - 8
+        }
+        origin.x = min(max(origin.x, bounds.minX + 12), bounds.maxX - pillSize.width - 12)
+        origin.y = min(max(origin.y, bounds.minY + 12), bounds.maxY - pillSize.height - 12)
+
+        let pillRect = NSRect(origin: origin, size: pillSize)
+        let background = NSBezierPath(roundedRect: pillRect, xRadius: 8, yRadius: 8)
+        NSColor.controlAccentColor.withAlphaComponent(0.92).setFill()
+        background.fill()
+
+        let textRect = NSRect(x: pillRect.minX + 12,
+                              y: pillRect.minY + 6,
+                              width: textSize.width,
+                              height: textSize.height)
+        (title as NSString).draw(in: textRect, withAttributes: attributes)
     }
 }
