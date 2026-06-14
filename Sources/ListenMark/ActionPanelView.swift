@@ -1,7 +1,49 @@
+import AppKit
 import SwiftUI
 
 enum ActionPanelLayout {
     static let visibleActionLimit = 5
+}
+
+enum ActionResultLayout {
+    static let textViewportMinHeight: CGFloat = 42
+    static let textViewportMaxHeight: CGFloat = 190
+
+    private static let outerHorizontalPadding: CGFloat = 28
+    private static let cardHorizontalPadding: CGFloat = 18
+    private static let cardVerticalPadding: CGFloat = 18
+    private static let textFontSize: CGFloat = 13
+    private static let textLineSpacing: CGFloat = 2
+
+    static func textViewportHeight(for text: String, panelWidth: CGFloat) -> CGFloat {
+        let width = max(180, panelWidth - outerHorizontalPadding - cardHorizontalPadding)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = textLineSpacing
+        let rect = (text as NSString).boundingRect(
+            with: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [
+                .font: NSFont.systemFont(ofSize: textFontSize),
+                .paragraphStyle: paragraph
+            ]
+        )
+        let measured = ceil(rect.height) + 2
+        return min(max(measured, textViewportMinHeight), textViewportMaxHeight)
+    }
+
+    static func panelHeight(for text: String, panelWidth: CGFloat, barHeight: CGFloat) -> CGFloat {
+        let headerHeight: CGFloat = 18
+        let toggleHeight: CGFloat = 18
+        let controlsHeight: CGFloat = 28
+        let outerVerticalPadding: CGFloat = 22
+        let verticalSpacing: CGFloat = 27
+        let textCardHeight = textViewportHeight(for: text, panelWidth: panelWidth) + cardVerticalPadding
+        return barHeight + outerVerticalPadding + headerHeight + textCardHeight + toggleHeight + controlsHeight + verticalSpacing
+    }
+
+    static func maxPanelHeight(barHeight: CGFloat) -> CGFloat {
+        panelHeight(for: String(repeating: "过耳不忘 ", count: 800), panelWidth: 320, barHeight: barHeight)
+    }
 }
 
 /// Drives the floating panel. The toolbar is data-driven from ActionStore;
@@ -197,7 +239,7 @@ struct ActionPanelView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
                     }
-                    .frame(maxHeight: 64)
+                    .frame(height: ActionResultLayout.textViewportHeight(for: text, panelWidth: model.contentWidth))
                     .padding(9)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
 

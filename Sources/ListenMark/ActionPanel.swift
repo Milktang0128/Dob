@@ -44,8 +44,8 @@ final class ActionPanel: NSPanel {
         case .idle: return barHeight
         case .loading: return barHeight + 48
         case .error: return barHeight + 56
-        case .result(_, _, _, _, _, let compact, _):
-            return compact ? barHeight + 66 : barHeight + 158
+        case .result(_, _, let text, _, _, let compact, _):
+            return compact ? barHeight + 66 : ActionResultLayout.panelHeight(for: text, panelWidth: currentWidth, barHeight: barHeight)
         }
     }
 
@@ -95,8 +95,9 @@ final class ActionPanel: NSPanel {
         if let vf = screen?.visibleFrame {
             if origin.x + size.width > vf.maxX { origin.x = vf.maxX - size.width - 8 }
             if origin.x < vf.minX { origin.x = vf.minX + 8 }
-            // leave headroom for the tallest result card below
-            if origin.y - 158 < vf.minY { origin.y = mouse.y + 18 }
+            // Leave headroom for the tallest result card below.
+            let maxExpansion = ActionResultLayout.maxPanelHeight(barHeight: barHeight) - barHeight
+            if origin.y - maxExpansion < vf.minY { origin.y = mouse.y + 18 }
         }
         setFrameOrigin(origin)
         orderFrontRegardless()

@@ -7,6 +7,7 @@ struct ActionsConfigView: View {
     @ObservedObject private var store = ActionStore.shared
     @State private var editing: EditTarget?
     @State private var draggingID: String?
+    @State private var dropTargetID: String?
 
     struct EditTarget: Identifiable {
         let id = UUID()
@@ -22,7 +23,10 @@ struct ActionsConfigView: View {
                         .onDrop(of: [.text],
                                 delegate: ActionDropDelegate(targetID: def.id,
                                                              draggingID: $draggingID,
+                                                             dropTargetID: $dropTargetID,
                                                              store: store))
+                        .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                        .listRowBackground(Color.clear)
                 }
             } header: {
                 Text(AppFlavor.text("朗读固定第一；拖动左侧把手调整其它技能；浮窗显示前 5 个启用技能，其余收在更多菜单", "Read stays first. Drag the handle to reorder other actions. The panel shows the first 5 enabled actions; the rest live in More."))
@@ -62,7 +66,10 @@ struct ActionsConfigView: View {
     }
 
     private func row(_ def: ActionDef) -> some View {
-        HStack(spacing: 10) {
+        let isDragging = draggingID == def.id
+        let isDropTarget = dropTargetID == def.id && draggingID != nil && draggingID != def.id
+
+        return HStack(spacing: 10) {
             dragHandle(def)
             Toggle("", isOn: Binding(get: { def.enabled }, set: { store.setEnabled(def.id, $0) }))
                 .labelsHidden().controlSize(.small)
@@ -97,7 +104,29 @@ struct ActionsConfigView: View {
                     .buttonStyle(.plain).foregroundStyle(.secondary).help(AppFlavor.text("删除", "Delete"))
             }
         }
-        .padding(.vertical, 3)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(rowFill(isDragging: isDragging, isDropTarget: isDropTarget))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(rowStroke(isDragging: isDragging, isDropTarget: isDropTarget), lineWidth: isDragging || isDropTarget ? 1 : 0.5)
+        }
+        .overlay(alignment: .top) {
+            if isDropTarget {
+                Capsule()
+                    .fill(Color.accentColor.opacity(0.55))
+                    .frame(height: 2)
+                    .padding(.horizontal, 8)
+            }
+        }
+        .shadow(color: isDragging ? Color.black.opacity(0.16) : .clear, radius: 14, x: 0, y: 7)
+        .scaleEffect(isDragging ? 1.012 : 1)
+        .zIndex(isDragging ? 10 : 0)
+        .animation(.easeOut(duration: 0.16), value: draggingID)
+        .animation(.easeOut(duration: 0.12), value: dropTargetID)
     }
 
     @ViewBuilder private func dragHandle(_ def: ActionDef) -> some View {
@@ -111,33 +140,106 @@ struct ActionsConfigView: View {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 18)
+                .frame(width: 24, height: 26)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.055)))
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .help(AppFlavor.text("拖动排序", "Drag to reorder"))
                 .onDrag {
                     draggingID = def.id
                     return NSItemProvider(object: def.id as NSString)
+                } preview: {
+                    ActionDragPreview(def: def)
                 }
         }
+    }
+
+    private func rowFill(isDragging: Bool, isDropTarget: Bool) -> Color {
+        if isDragging { return Color(nsColor: .controlBackgroundColor).opacity(0.98) }
+        if isDropTarget { return Color.accentColor.opacity(0.08) }
+        return Color.primary.opacity(0.025)
+    }
+
+    private func rowStroke(isDragging: Bool, isDropTarget: Bool) -> Color {
+        if isDragging { return Color.primary.opacity(0.18) }
+        if isDropTarget { return Color.accentColor.opacity(0.34) }
+        return Color.primary.opacity(0.06)
     }
 }
 
 private struct ActionDropDelegate: DropDelegate {
     let targetID: String
     @Binding var draggingID: String?
+    @Binding var dropTargetID: String?
     let store: ActionStore
 
     func dropEntered(info: DropInfo) {
         guard let draggingID, draggingID != targetID else { return }
-        store.move(draggingID, before: targetID)
+        dropTargetID = targetID
+        withAnimation(.easeOut(duration: 0.14)) {
+            store.move(draggingID, before: targetID)
+        }
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTargetID == targetID {
+            dropTargetID = nil
+        }
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        draggingID = nil
+        withAnimation(.easeOut(duration: 0.16)) {
+            draggingID = nil
+            dropTargetID = nil
+        }
         return true
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         DropProposal(operation: .move)
+    }
+}
+
+private struct ActionDragPreview: View {
+    let def: ActionDef
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 26)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.07)))
+            Image(systemName: def.enabled ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(def.enabled ? Color.accentColor : Color.secondary)
+            Image(systemName: def.icon)
+                .frame(width: 22)
+                .foregroundStyle(.secondary)
+            Text(def.name)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+            if def.isBuiltin {
+                Text(AppFlavor.text("内置", "Built-in"))
+                    .font(.caption2)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: 18)
+            Text(def.hotKeyDisplay ?? AppFlavor.text("未设置", "Not Set"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(width: 430, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.5)
+        }
+        .shadow(color: Color.black.opacity(0.20), radius: 18, x: 0, y: 10)
     }
 }
 
