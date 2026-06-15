@@ -23,8 +23,8 @@ enum Settings {
     }
 
     static var llmAPIKey: String {
-        get { d.string(forKey: "deepseekKey") ?? "" }
-        set { d.set(newValue, forKey: "deepseekKey") }
+        get { KeychainStore.get("deepseekKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "deepseekKey") }
     }
 
     static var llmModel: String {
@@ -206,8 +206,8 @@ enum Settings {
     }
 
     static var compareProvider1APIKey: String {
-        get { d.string(forKey: "compareProvider1APIKey") ?? "" }
-        set { d.set(newValue, forKey: "compareProvider1APIKey") }
+        get { KeychainStore.get("compareProvider1APIKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "compareProvider1APIKey") }
     }
 
     static var compareProvider1Model: String {
@@ -234,8 +234,8 @@ enum Settings {
     }
 
     static var compareProvider2APIKey: String {
-        get { d.string(forKey: "compareProvider2APIKey") ?? "" }
-        set { d.set(newValue, forKey: "compareProvider2APIKey") }
+        get { KeychainStore.get("compareProvider2APIKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "compareProvider2APIKey") }
     }
 
     static var compareProvider2Model: String {
@@ -260,8 +260,8 @@ enum Settings {
     }
 
     static var volcToken: String {
-        get { d.string(forKey: "volcToken") ?? "" }
-        set { d.set(newValue, forKey: "volcToken") }
+        get { KeychainStore.get("volcToken") ?? "" }
+        set { KeychainStore.set(newValue, key: "volcToken") }
     }
 
     static var volcCluster: String {
@@ -288,8 +288,8 @@ enum Settings {
     static var volcConfigured: Bool { !volcAppId.isEmpty && !volcToken.isEmpty }
 
     static var microsoftTTSKey: String {
-        get { d.string(forKey: "microsoftTTSKey") ?? "" }
-        set { d.set(newValue, forKey: "microsoftTTSKey") }
+        get { KeychainStore.get("microsoftTTSKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "microsoftTTSKey") }
     }
 
     static var microsoftTTSRegion: String {
@@ -313,8 +313,8 @@ enum Settings {
     }
 
     static var googleTTSKey: String {
-        get { d.string(forKey: "googleTTSKey") ?? "" }
-        set { d.set(newValue, forKey: "googleTTSKey") }
+        get { KeychainStore.get("googleTTSKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "googleTTSKey") }
     }
 
     static var googleTTSVoice: String {
@@ -340,8 +340,8 @@ enum Settings {
     }
 
     static var tencentTTSSecretKey: String {
-        get { d.string(forKey: "tencentTTSSecretKey") ?? "" }
-        set { d.set(newValue, forKey: "tencentTTSSecretKey") }
+        get { KeychainStore.get("tencentTTSSecretKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "tencentTTSSecretKey") }
     }
 
     static var tencentTTSHost: String {
@@ -533,6 +533,29 @@ enum Settings {
     static var lastActionID: String {
         get { d.string(forKey: "lastActionID") ?? "" }
         set { d.set(newValue, forKey: "lastActionID") }
+    }
+
+    // MARK: Keychain migration
+
+    /// One-time migration: moves any credentials previously saved in UserDefaults
+    /// (plaintext) into the Keychain. Safe to call on every launch — values that
+    /// have already been moved are absent from UserDefaults and will be skipped.
+    static func migrateKeysToKeychain() {
+        let keysToMigrate = [
+            "deepseekKey",
+            "volcToken",
+            "microsoftTTSKey",
+            "googleTTSKey",
+            "tencentTTSSecretKey",
+            "compareProvider1APIKey",
+            "compareProvider2APIKey"
+        ]
+        for key in keysToMigrate {
+            if let value = d.string(forKey: key), !value.isEmpty {
+                KeychainStore.set(value, key: key)
+                d.removeObject(forKey: key)
+            }
+        }
     }
 }
 
