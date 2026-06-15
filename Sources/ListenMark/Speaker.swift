@@ -1,5 +1,11 @@
 import AVFoundation
 
+enum SpeechPlaybackStatus: Equatable {
+    case idle
+    case preparing(String)
+    case playing(String)
+}
+
 /// Voice-first output with streaming support.
 /// - One-shot `speak` for first playback / 试听.
 /// - `replay` reuses the last generated cloud audio when possible.
@@ -7,10 +13,11 @@ import AVFoundation
 /// Local engine queues utterances natively; cloud engines synthesize each sentence
 /// or chunk and play them back-to-back through a serial audio queue. Cloud failure
 /// falls back to the local voice.
-final class Speaker: NSObject, AVAudioPlayerDelegate {
+final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = Speaker()
 
     private let synth = AVSpeechSynthesizer()
+    @Published private(set) var status: SpeechPlaybackStatus = .idle
     private var player: AVAudioPlayer?
     private var lastGeneratedAudio: (text: String, chunks: [Data], complete: Bool)?
     private var playbackGeneration = 0
@@ -35,6 +42,7 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         let generation = nextPlaybackGeneration()
         if let provider = cloudProvider {
             lastGeneratedAudio = (t, [], false)
+            setStatus(.preparing(provider.displayName))
             enqueueCloud(CloudTTS.textChunks(t, provider: provider),
                          provider: provider,
                          generation: generation,
@@ -50,6 +58,7 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         guard !t.isEmpty else { return }
         stop()
         if let audio = lastGeneratedAudio, audio.text == t, audio.complete {
+            setStatus(.playing(AppFlavor.text("已缓存语音", "cached speech")))
             playSequence(audio.chunks) {}
         } else {
             speak(t)
@@ -70,9 +79,12 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         guard streaming, !s.isEmpty else { return }
         if let provider = activeCloudProvider {
             cloudQueue.append(contentsOf: CloudTTS.textChunks(s, provider: provider))
+            if !cloudDraining {
+                setStatus(.preparing(provider.displayName))
+            }
             startDrainIfNeeded()
         } else {
-            synth.speak(utterance(for: s))   // AVSpeechSynthesizer queues
+            localSpeak(s)   // AVSpeechSynthesizer queues
         }
     }
 
@@ -91,6 +103,7 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         activeCacheText = nil
         activeGeneratedChunks = []
         onFinishPlay = nil
+        setStatus(.idle)
     }
 
     // MARK: Internals
@@ -102,7 +115,10 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         return u
     }
 
-    private func localSpeak(_ t: String) { synth.speak(utterance(for: t)) }
+    private func localSpeak(_ t: String) {
+        setStatus(.playing(AppFlavor.text("macOS 本地语音", "macOS Speech")))
+        synth.speak(utterance(for: t))
+    }
 
     private func nextPlaybackGeneration() -> Int {
         playbackGeneration += 1
@@ -134,6 +150,7 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
             if let text = activeCacheText {
                 lastGeneratedAudio = (text, activeGeneratedChunks, true)
             }
+            setStatus(.idle)
             return
         }
         let next = cloudQueue.removeFirst()
@@ -142,6 +159,7 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
             drainNext()
             return
         }
+        setStatus(.preparing(provider.displayName))
         Task { [weak self] in
             do {
                 let data = try await provider.synthesize(next)
@@ -152,6 +170,7 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
                         self.activeGeneratedChunks.append(data)
                         self.lastGeneratedAudio = (text, self.activeGeneratedChunks, false)
                     }
+                    self.setStatus(.playing(provider.displayName))
                     self.playThen(data) { [weak self] in self?.drainNext() }
                 }
             } catch {
@@ -171,7 +190,11 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
 
     private func playSequence(_ chunks: [Data], _ done: @escaping () -> Void) {
         var remaining = chunks
-        guard !remaining.isEmpty else { done(); return }
+        guard !remaining.isEmpty else {
+            setStatus(.idle)
+            done()
+            return
+        }
         let first = remaining.removeFirst()
         playThen(first) { [weak self] in
             self?.playSequence(remaining, done)
@@ -195,5 +218,15 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         let done = onFinishPlay
         onFinishPlay = nil
         done?()
+    }
+
+    private func setStatus(_ status: SpeechPlaybackStatus) {
+        if Thread.isMainThread {
+            self.status = status
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.status = status
+            }
+        }
     }
 }

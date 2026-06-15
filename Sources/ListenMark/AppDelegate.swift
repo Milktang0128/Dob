@@ -844,6 +844,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
+        let reusableBaselineText: String
+        if case .result = panel.model.phase {
+            reusableBaselineText = currentResult.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            reusableBaselineText = ""
+        }
+        let shouldReuseBaseline = !reusableBaselineText.isEmpty
+
         cancelActiveAction()
         let generation = actionGeneration
         let source = currentSource
@@ -858,10 +866,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.model.canCompare = false
         panel.model.selectedCompareID = providers.first?.id
 
-        let initialResults = providers.map {
-            CompareModelResult(id: $0.id, label: $0.label, model: $0.model,
-                               text: "", isLoading: true, error: nil)
+        let initialResults = providers.map { provider in
+            if shouldReuseBaseline && provider.id == baseline.id {
+                CompareModelResult(id: provider.id, label: provider.label, model: provider.model,
+                                   text: reusableBaselineText, isLoading: false, error: nil)
+            } else {
+                CompareModelResult(id: provider.id, label: provider.label, model: provider.model,
+                                   text: "", isLoading: true, error: nil)
+            }
         }
+        let providersToRun = providers.filter { !(shouldReuseBaseline && $0.id == baseline.id) }
         panel.model.phase = .compare(action: action.name, icon: "rectangle.split.3x1",
                                      results: initialResults, archived: false,
                                      contextUsed: request.contextUsed)
@@ -870,7 +884,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             var latest = initialResults
             await withTaskGroup(of: CompareModelResult.self) { group in
-                for provider in providers {
+                for provider in providersToRun {
                     group.addTask {
                         await Self.runCompareCandidate(provider: provider,
                                                        prompt: request.prompt,

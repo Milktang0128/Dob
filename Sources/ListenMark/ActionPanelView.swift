@@ -146,6 +146,7 @@ final class PanelModel: ObservableObject {
 struct ActionPanelView: View {
     @ObservedObject var model: PanelModel
     @ObservedObject private var store = ActionStore.shared
+    @ObservedObject private var speaker = Speaker.shared
     @State private var showOriginalCopyBubble = false
     @State private var showResultCopyBubble = false
     @State private var originalCopyArchived = false
@@ -383,6 +384,7 @@ struct ActionPanelView: View {
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color.primary.opacity(0.06)))
                     }
+                    speechStatusPill
                     Spacer()
                     if archived {
                         Text(AppFlavor.text("已留档", "Saved")).font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -552,6 +554,20 @@ struct ActionPanelView: View {
         .toggleStyle(.checkbox)
         .help(AppFlavor.text("生成完成后自动朗读 AI 结果", "Read AI results automatically when generation completes"))
         .fixedSize()
+    }
+
+    @ViewBuilder private var speechStatusPill: some View {
+        if case .preparing(let provider) = speaker.status {
+            Label(AppFlavor.text("正在生成语音", "Preparing speech"), systemImage: "waveform")
+                .font(.system(size: 10, weight: .medium))
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Color.accentColor.opacity(0.10)))
+                .help(AppFlavor.text("正在通过 \(provider) 生成语音，稍后会自动播放。",
+                                     "Generating speech with \(provider). Playback will start shortly."))
+        }
     }
 
     private var inputBinding: Binding<String> {

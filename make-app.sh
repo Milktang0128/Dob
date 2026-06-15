@@ -7,8 +7,8 @@ cd "$(dirname "$0")"
 swift build -c release
 
 FLAVOR="${FLAVOR:-zh}"
-VERSION="${VERSION:-0.2.6}"
-BUILD="${BUILD:-26}"
+VERSION="${VERSION:-0.2.7}"
+BUILD="${BUILD:-27}"
 if [ "$FLAVOR" = "en" ] || [ "$FLAVOR" = "international" ]; then
   APP="ListenMark.app"
   BUNDLE_NAME="ListenMark"

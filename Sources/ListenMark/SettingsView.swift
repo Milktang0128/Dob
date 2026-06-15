@@ -317,14 +317,23 @@ struct SettingsView: View {
 
     private var archiveSection: some View {
         SettingsSection(title: AppFlavor.text("留档与历史", "Archive and History"),
-                        subtitle: AppFlavor.text("主动留档适合长期复习；静默历史适合临时回看。",
-                                                 "Archive is for long-term review; silent history is for lightweight lookup.")) {
+                        subtitle: AppFlavor.text("它们是两套记录：留档用于复习，历史用于临时回看。",
+                                                 "These are separate records: Archive is for review, History is for quick lookup.")) {
+            archiveSubsectionHeader(icon: "tray.and.arrow.down.fill",
+                                    title: AppFlavor.text("主动留档", "Archive"),
+                                    subtitle: AppFlavor.text("进入 Markdown 档案和今日回响，适合长期复习。",
+                                                             "Saved into Markdown archive and Review, for long-term recall."))
             SettingToggle(title: AppFlavor.text("自动留档每次动作", "Auto-save every action"),
                           subtitle: AppFlavor.text("默认关闭。通常点击结果卡上的留档更可控。", "Off by default. Saving from the result card is usually more deliberate."),
                           isOn: $autoArchive)
-            SettingToggle(title: AppFlavor.text("静默历史记录最近 500 条", "Silent history, latest 500"),
-                          subtitle: AppFlavor.text("保存原文、结果、动作和来源，不保存全文上下文，也不参与今日回响。",
-                                                   "Stores source text, result, action, and app only. No full context and no Review scheduling."),
+            Divider()
+            archiveSubsectionHeader(icon: "clock.arrow.circlepath",
+                                    title: AppFlavor.text("静默历史", "Silent History"),
+                                    subtitle: AppFlavor.text("只保留最近 500 条临时记录，不进入档案，也不参与今日回响。",
+                                                             "Keeps only the latest 500 lightweight records. It does not enter Archive or Review."))
+            SettingToggle(title: AppFlavor.text("记录最近 500 条历史", "Keep latest 500 history items"),
+                          subtitle: AppFlavor.text("保存原文、结果、动作和来源；不保存全文上下文。",
+                                                   "Stores source text, result, action, and app. Full-text context is not stored."),
                           isOn: $historyEnabled)
             Divider()
             VStack(alignment: .leading, spacing: 8) {
@@ -350,6 +359,23 @@ struct SettingsView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private func archiveSubsectionHeader(icon: String, title: String, subtitle: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
