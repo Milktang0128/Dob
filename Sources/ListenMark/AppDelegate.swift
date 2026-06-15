@@ -185,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                           onFire: { [weak self] in
             self?.triggerCapture()
         }) {
-            NSLog("ListenMark · \(AppFlavor.text("弹出面板快捷键注册失败", "panel hotkey registration failed"))：\(Settings.hotKeyDisplay)")
+            NSLog("Dob · \(AppFlavor.text("弹出面板快捷键注册失败", "panel hotkey registration failed"))：\(Settings.hotKeyDisplay)")
         }
         if !HotkeyManager.shared.register(id: 2,
                                           keyCode: UInt32(Settings.ocrHotKeyCode),
@@ -193,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                           onFire: { [weak self] in
             self?.triggerScreenOCR()
         }) {
-            NSLog("ListenMark · \(AppFlavor.text("屏幕 OCR 快捷键注册失败", "screen OCR hotkey registration failed"))：\(Settings.ocrHotKeyDisplay)")
+            NSLog("Dob · \(AppFlavor.text("屏幕 OCR 快捷键注册失败", "screen OCR hotkey registration failed"))：\(Settings.ocrHotKeyDisplay)")
         }
         if !HotkeyManager.shared.register(id: 3,
                                           keyCode: UInt32(Settings.silentOCRHotKeyCode),
@@ -201,7 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                           onFire: { [weak self] in
             self?.triggerSilentScreenOCR()
         }) {
-            NSLog("ListenMark · \(AppFlavor.text("静默 OCR 快捷键注册失败", "silent OCR hotkey registration failed"))：\(Settings.silentOCRHotKeyDisplay)")
+            NSLog("Dob · \(AppFlavor.text("静默 OCR 快捷键注册失败", "silent OCR hotkey registration failed"))：\(Settings.silentOCRHotKeyDisplay)")
         }
         if !HotkeyManager.shared.register(id: 4,
                                           keyCode: UInt32(Settings.inputHotKeyCode),
@@ -209,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                           onFire: { [weak self] in
             self?.triggerInputPanel()
         }) {
-            NSLog("ListenMark · \(AppFlavor.text("输入面板快捷键注册失败", "input panel hotkey registration failed"))：\(Settings.inputHotKeyDisplay)")
+            NSLog("Dob · \(AppFlavor.text("输入面板快捷键注册失败", "input panel hotkey registration failed"))：\(Settings.inputHotKeyDisplay)")
         }
         registerActionHotKeys()
         triggerMenuItem?.title = "\(AppFlavor.text("处理选中文本", "Process Selection"))  \(Settings.hotKeyDisplay)"
@@ -236,7 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                               onFire: { [weak self] in
                 self?.triggerAction(action.id)
             }) {
-                NSLog("ListenMark · \(AppFlavor.text("技能快捷键注册失败", "action hotkey registration failed"))：\(action.name) \(action.hotKeyDisplay ?? "")")
+                NSLog("Dob · \(AppFlavor.text("技能快捷键注册失败", "action hotkey registration failed"))：\(action.name) \(action.hotKeyDisplay ?? "")")
             }
         }
     }
@@ -515,7 +515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.currentContextUsed = false
                 self.showPanel()
                 if SelectionGrabber.isTrusted {
-                    self.panel.model.phase = .error(AppFlavor.text("没取到选中文本——先选中文字再触发", "No selected text found. Select text first, then trigger ListenMark."))
+                    self.panel.model.phase = .error(AppFlavor.text("没取到选中文本——先选中文字再触发", "No selected text found. Select text first, then trigger Dob."))
                 } else {
                     self.panel.model.phase = .error(AppFlavor.text("需要「辅助功能」权限才能取词（菜单 › 辅助功能权限设置）", "Accessibility permission is required to read selected text. Use the menu item Accessibility Settings."))
                 }
@@ -1262,14 +1262,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.messageText = AppFlavor.text("需要「辅助功能」权限", "Accessibility Permission Required")
         alert.informativeText = AppFlavor.text(
             """
-            过耳不忘需要「辅助功能」权限，才能读取你在其它应用里选中的文本。
+            Dob 需要「辅助功能」权限，才能读取你在其它应用里选中的文本。
 
-            请在 系统设置 › 隐私与安全性 › 辅助功能 中打开「过耳不忘」，然后重新启动本应用。
+            请在 系统设置 › 隐私与安全性 › 辅助功能 中打开「Dob」，然后重新启动本应用。
             """,
             """
-            ListenMark needs Accessibility permission to read selected text in other apps.
+            Dob needs Accessibility permission to read selected text in other apps.
 
-            Open System Settings › Privacy & Security › Accessibility, enable ListenMark, then restart the app.
+            Open System Settings › Privacy & Security › Accessibility, enable Dob, then restart the app.
             """
         )
         alert.addButton(withTitle: AppFlavor.text("打开设置", "Open Settings"))

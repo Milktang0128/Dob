@@ -430,7 +430,7 @@ struct ServicesView: View {
             }
             Button(AppFlavor.text("试听", "Test Voice")) {
                 Settings.speechRate = Float(rate)
-                Speaker.shared.speak(AppFlavor.text("过耳不忘，这是本地语音的试听效果。", "ListenMark. This is the local speech voice."))
+                Speaker.shared.speak(AppFlavor.text("Dob，这是本地语音的试听效果。", "Dob. This is the local speech voice."))
             }
         }
     }
@@ -490,7 +490,7 @@ struct ServicesView: View {
             Button(AppFlavor.text("试听", "Test Voice")) {
                 ttsEngine = "volcano"
                 Settings.speechRate = Float(rate)
-                Speaker.shared.speak(AppFlavor.text("过耳不忘，这是当前火山音色的试听效果。", "ListenMark. This is the current Volcengine voice."))
+                Speaker.shared.speak(AppFlavor.text("Dob，这是当前火山音色的试听效果。", "Dob. This is the current Volcengine voice."))
             }
             .disabled(!volcanoConfigured)
         }
@@ -535,7 +535,7 @@ struct ServicesView: View {
                 Spacer()
                 Button(AppFlavor.text("试听", "Test Voice")) {
                     ttsEngine = "microsoft"
-                    Speaker.shared.speak(AppFlavor.text("过耳不忘，这是 Microsoft 语音合成的试听效果。", "ListenMark. This is the Microsoft Speech voice."))
+                    Speaker.shared.speak(AppFlavor.text("Dob，这是 Microsoft 语音合成的试听效果。", "Dob. This is the Microsoft Speech voice."))
                 }
                 .disabled(!microsoftConfigured)
             }
@@ -591,7 +591,7 @@ struct ServicesView: View {
                 Spacer()
                 Button(AppFlavor.text("试听", "Test Voice")) {
                     ttsEngine = "google"
-                    Speaker.shared.speak(AppFlavor.text("过耳不忘，这是 Google 语音合成的试听效果。", "ListenMark. This is the Google Text-to-Speech voice."))
+                    Speaker.shared.speak(AppFlavor.text("Dob，这是 Google 语音合成的试听效果。", "Dob. This is the Google Text-to-Speech voice."))
                 }
                 .disabled(!googleConfigured)
             }
@@ -650,7 +650,7 @@ struct ServicesView: View {
                 Spacer()
                 Button(AppFlavor.text("试听", "Test Voice")) {
                     ttsEngine = "tencent"
-                    Speaker.shared.speak(AppFlavor.text("过耳不忘，这是腾讯云语音合成的试听效果。", "ListenMark. This is the Tencent Cloud TTS voice."))
+                    Speaker.shared.speak(AppFlavor.text("Dob，这是腾讯云语音合成的试听效果。", "Dob. This is the Tencent Cloud TTS voice."))
                 }
                 .disabled(!tencentConfigured)
             }
@@ -919,7 +919,7 @@ struct ServicesView: View {
         Task {
             let result: ServiceTestResult
             do {
-                let sample = AppFlavor.text("过耳不忘接口检测。", "ListenMark API test.")
+                let sample = AppFlavor.text("Dob 接口检测。", "Dob API test.")
                 let data = try await provider.synthesize(sample)
                 guard !data.isEmpty else { throw CloudTTSError.noAudio(provider.displayName) }
                 let size = ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)

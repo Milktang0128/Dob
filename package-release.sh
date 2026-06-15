@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-VERSION="${VERSION:-0.2.7}"
-BUILD="${BUILD:-27}"
+VERSION="${VERSION:-0.3.0}"
+BUILD="${BUILD:-30}"
 ARCH="${ARCH:-arm64}"
 IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Zhi Tang (LB8ZBRDP63)}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-myskills-notary}"
@@ -14,21 +14,21 @@ package_one() {
   local app_name app_path prefix dmg zip checksum root note_prefix app_notary dmg_notary label
 
   if [ "$flavor" = "international" ]; then
-    app_name="ListenMark"
-    app_path="ListenMark.app"
-    prefix="ListenMark-International"
+    app_name="Dob International"
+    app_path="Dob International.app"
+    prefix="Dob-International"
     checksum="release/checksums-international-${VERSION}-${ARCH}.txt"
     root="release/dmg-root-international"
     note_prefix="international-"
-    label="ListenMark International"
+    label="Dob International"
   else
-    app_name="过耳不忘"
-    app_path="过耳不忘.app"
-    prefix="ListenMark"
+    app_name="Dob"
+    app_path="Dob.app"
+    prefix="Dob"
     checksum="release/checksums-${VERSION}-${ARCH}.txt"
     root="release/dmg-root"
     note_prefix=""
-    label="过耳不忘"
+    label="Dob"
   fi
 
   dmg="release/${prefix}-${VERSION}-${ARCH}.dmg"

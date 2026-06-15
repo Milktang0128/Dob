@@ -174,7 +174,7 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     self.playThen(data) { [weak self] in self?.drainNext() }
                 }
             } catch {
-                NSLog("ListenMark · \(provider.displayName) 失败，回退本地语音：\(error)")
+                NSLog("Dob · \(provider.displayName) 失败，回退本地语音：\(error)")
                 guard let self else { return }
                 await MainActor.run {
                     guard self.playbackGeneration == self.activeCloudGeneration else { return }
@@ -209,7 +209,7 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
             onFinishPlay = done
             p.play()
         } catch {
-            NSLog("ListenMark · 音频播放失败：\(error)")
+            NSLog("Dob · 音频播放失败：\(error)")
             done()
         }
     }

@@ -6,7 +6,7 @@ final class GitHubReleaseUpdater {
     static let shared = GitHubReleaseUpdater()
 
     private let owner = "Milktang0128"
-    private let repo = "ListenMark"
+    private let repo = "Dob"
     private let lastCheckKey = "githubReleaseUpdater.lastCheckAt"
     private let checkInterval: TimeInterval = 24 * 60 * 60
     private var isDownloading = false
@@ -72,7 +72,7 @@ final class GitHubReleaseUpdater {
         let url = URL(string: rawURL)!
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("ListenMark", forHTTPHeaderField: "User-Agent")
+        request.setValue("Dob", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -96,7 +96,7 @@ final class GitHubReleaseUpdater {
             Current version: \(currentVersion)
             Installer: \(asset.name) (\(size))
 
-            After download, the installer is verified, the current app is replaced, and ListenMark reopens. If macOS permissions prevent automatic install, the DMG opens for manual update.
+            After download, the installer is verified, the current app is replaced, and Dob reopens. If macOS permissions prevent automatic install, the DMG opens for manual update.
             """
         )
         alert.addButton(withTitle: AppFlavor.text("下载并安装", "Download and Install"))
@@ -139,7 +139,7 @@ final class GitHubReleaseUpdater {
     private func download(_ asset: GitHubAsset) async throws -> URL {
         guard let url = URL(string: asset.downloadURL) else { throw UpdaterError.badDownloadURL }
         var request = URLRequest(url: url)
-        request.setValue("ListenMark", forHTTPHeaderField: "User-Agent")
+        request.setValue("Dob", forHTTPHeaderField: "User-Agent")
 
         let (temporaryURL, response) = try await URLSession.shared.download(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -168,7 +168,7 @@ final class GitHubReleaseUpdater {
         }
 
         let mountPoint = FileManager.default.temporaryDirectory
-            .appendingPathComponent("listenmark-update-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("dob-update-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true)
 
         var mounted = false
@@ -233,7 +233,7 @@ final class GitHubReleaseUpdater {
 
     private func launchInstaller(candidateApp: URL, targetApp: URL, mountPoint: URL) throws {
         let scriptURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("listenmark-install-\(UUID().uuidString).zsh")
+            .appendingPathComponent("dob-install-\(UUID().uuidString).zsh")
         let script = """
         #!/bin/zsh
         set -euo pipefail
@@ -243,7 +243,7 @@ final class GitHubReleaseUpdater {
         target_app="$3"
         mount_point="$4"
         log_dir="$HOME/Library/Logs"
-        log_file="$log_dir/ListenMark-Updater.log"
+        log_file="$log_dir/Dob-Updater.log"
 
         mkdir -p "$log_dir"
         exec >> "$log_file" 2>&1

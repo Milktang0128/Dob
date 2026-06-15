@@ -115,7 +115,7 @@ private enum MicrosoftTTS {
         req.setValue(key, forHTTPHeaderField: "Ocp-Apim-Subscription-Key")
         req.setValue("application/ssml+xml", forHTTPHeaderField: "Content-Type")
         req.setValue("audio-24khz-48kbitrate-mono-mp3", forHTTPHeaderField: "X-Microsoft-OutputFormat")
-        req.setValue("ListenMark", forHTTPHeaderField: "User-Agent")
+        req.setValue("Dob", forHTTPHeaderField: "User-Agent")
         req.httpBody = ssml(text: text, voice: voice).data(using: .utf8)
 
         let (data, resp) = try await URLSession.shared.data(for: req)

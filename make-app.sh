@@ -7,18 +7,18 @@ cd "$(dirname "$0")"
 swift build -c release
 
 FLAVOR="${FLAVOR:-zh}"
-VERSION="${VERSION:-0.2.7}"
-BUILD="${BUILD:-27}"
+VERSION="${VERSION:-0.3.0}"
+BUILD="${BUILD:-30}"
 if [ "$FLAVOR" = "en" ] || [ "$FLAVOR" = "international" ]; then
-  APP="ListenMark.app"
-  BUNDLE_NAME="ListenMark"
-  BUNDLE_DISPLAY_NAME="ListenMark"
+  APP="Dob International.app"
+  BUNDLE_NAME="Dob International"
+  BUNDLE_DISPLAY_NAME="Dob International"
   BUNDLE_ID="com.listenmark.international"
   APP_FLAVOR="international"
 else
-  APP="过耳不忘.app"
-  BUNDLE_NAME="过耳不忘"
-  BUNDLE_DISPLAY_NAME="过耳不忘"
+  APP="Dob.app"
+  BUNDLE_NAME="Dob"
+  BUNDLE_DISPLAY_NAME="Dob"
   BUNDLE_ID="com.listenmark.app"
   APP_FLAVOR="zh"
 fi

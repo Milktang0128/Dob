@@ -42,7 +42,7 @@ enum ActionResultLayout {
     }
 
     static func maxPanelHeight(barHeight: CGFloat) -> CGFloat {
-        panelHeight(for: String(repeating: "过耳不忘 ", count: 800), panelWidth: 320, barHeight: barHeight)
+        panelHeight(for: String(repeating: "Dob ", count: 800), panelWidth: 320, barHeight: barHeight)
     }
 }
 

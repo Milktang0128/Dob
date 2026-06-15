@@ -1,92 +1,87 @@
-# 过耳不忘
+# Dob：过耳不忘的 AI 读写工具
 
 [English / International Edition](README.en.md)
 
-**过耳不忘**是一款 macOS 原生菜单栏 App。它把「选中文本」变成一组可以直接听、解释、翻译、提炼、留档的语音化动作：
+**Dob** 是一款 macOS 原生菜单栏 App。它把「选中文本」变成一组可听、可写、可比较、可留档的 AI 动作：
 
-选中文字 -> 选择技能 -> 听到结果 -> 需要时一键留档、搜索、重听。
+选中文字 -> 选择技能 -> 结合上下文处理 -> 听到或看到结果 -> 需要时一键留档、搜索、重听。
 
-中文用户安装后的 App 名称是 **过耳不忘**。仓库名、SwiftPM target、安装包和国际版沿用英文名 **ListenMark**。
+“过耳不忘”现在是 Dob 的中文定位语，不再作为独立 App 名。中文用户安装后看到的 App 名称也是 **Dob**。
 
 ## 下载
 
 已签名和公证的安装包发布在 GitHub Releases：
 
-<https://github.com/Milktang0128/ListenMark/releases>
+<https://github.com/Milktang0128/Dob/releases>
 
 发行通道：
 
 | 版本 | App 名称 | Release tag | 安装包 |
 |---|---|---|---|
-| 中文版 | 过耳不忘 | `v...` | `ListenMark-...-arm64.dmg` |
-| 国际版 | ListenMark | `listenmark-v...` | `ListenMark-International-...-arm64.dmg` |
+| 中文版 | Dob | `v...` | `Dob-...-arm64.dmg` |
+| 国际版 | Dob International | `listenmark-v...` | `Dob-International-...-arm64.dmg` |
 
-两个版本使用不同的 bundle id、数据目录和自动更新通道，可以并行维护。
+0.3.x 是品牌桥接版本：安装包和用户界面全面改为 Dob，但底层 bundle id、设置域和数据目录暂时保留旧值，以保证老用户自动更新、辅助功能权限、API Key、快捷键、档案和历史记录连续。
 
 ## 核心能力
 
 | 能力 | 说明 | 需要配置 |
 |---|---|---|
 | 朗读 | 直接朗读选中文本 | 无，本地语音可用 |
-| 解释 | 用简体中文解释选中内容，保留重点和背景 | OpenAI 兼容 API Key |
+| 解释 | 结合上下文解释选中内容 | OpenAI 兼容 API Key |
 | 翻译 | 中文译英文；其他语言译简体中文 | OpenAI 兼容 API Key |
 | 提炼 | 提取核心结论，适合快速听懂 | OpenAI 兼容 API Key |
-| 背景 | 补充必要背景知识，不展开成百科，默认不启用 | OpenAI 兼容 API Key |
-| 洞见 | 结合上下文发掘更深层的意涵和思想张力，默认不启用 | OpenAI 兼容 API Key |
-| 盲点 | 查找观点、论证或方案的盲区和薄弱环节，默认不启用 | OpenAI 兼容 API Key |
-| 审校 | 面向写作草稿直接输出审校后的修订版本，默认不启用 | OpenAI 兼容 API Key |
-| 自定义技能 | 最多新增 4 个自己的处理动作 | OpenAI 兼容 API Key |
-| 屏幕 OCR | 无法直接取词时，快捷键框选屏幕区域识别文字 | 无 |
+| 洞见 | 发掘更深层的意涵、张力和可能影响 | OpenAI 兼容 API Key |
+| 盲点 | 查找观点、论证或方案的盲区和薄弱环节 | OpenAI 兼容 API Key |
+| 审校 | 面向写作草稿直接输出审校后的版本 | OpenAI 兼容 API Key |
+| 自定义技能 | 新增自己的提示词动作 | OpenAI 兼容 API Key |
+| 多模型比较 | 同一技能最多比较默认模型和两个备选模型 | OpenAI 兼容 API Key |
+| 屏幕 OCR | 无法直接取词时框选屏幕区域识别文字 | 无 |
 | 留档 | 本地保存原文、结果、来源、时间和上下文摘录 | 无 |
 | 历史记录 | 静默保存最近 500 次动作，不包含全文上下文 | 无 |
 | 档案 / 今日回响 | 搜索、回看、重听、复习已保存内容 | 无 |
 
 ## 新特性
 
-- **全文上下文**：解释、翻译、提炼、背景和自定义技能默认会尽量读取当前文本控件或页面的可访问上下文，把「选中内容 + 上下文」一起交给模型；拿不到时自动回退到选中文本。
-- **兼容式自动弹出**：划词自动弹出会优先用辅助功能直接取词；在微信内置浏览器等不暴露标准选区的界面，会在拖选或双击后临时复制取词，并恢复原剪贴板。
-- **上下文感知提示**：如果本次回答成功带上上下文，结果区域会显示「已附带上下文」，让用户知道这次不是孤立处理。
+- **全文上下文**：解释、翻译、提炼、洞见、审校和自定义技能默认会尽量读取当前文本控件或页面的可访问上下文，把「选中内容 + 上下文」一起交给模型。
+- **上下文感知提示**：如果本次回答成功带上上下文，结果区域会显示「已附带上下文」。
 - **轻量留档上下文**：留档不会保存整篇全文，只保存选中内容上下各 200 字，并用 `==选中内容==` 高亮。
-- **静默历史记录**：默认保存最近 500 次处理记录，便于像 Bob 一样回看；历史不保存全文上下文，也不参与今日回响。
+- **静默历史记录**：默认保存最近 500 次处理记录，便于临时回看；历史不保存全文上下文，也不参与今日回响。
 - **技能快捷键**：每个技能都可以设置全局快捷键。朗读默认 `Control + Shift + R`，解释默认 `Control + Shift + E`，翻译默认 `Control + Shift + T`。
 - **技能管理**：朗读固定第一；其它技能可拖动排序、禁用、编辑提示词；浮窗只展示前 5 个启用技能，其余收进更多菜单。
 - **面板键盘化与固定窗口**：浮窗支持 `Esc` 关闭、`⌘R` 重试、`⌘S` 留档、`⌘C` 复制、`⌘P` 固定、`⌘1` 到 `⌘5` 触发前五个技能，以及 `⌘+ / ⌘-` 调整结果字号。
-- **多模型比较**：结果页可用同一个技能同时比较默认模型和最多两个备选 OpenAI 兼容模型；单个模型失败不会影响其它结果。
-- **AI 优化提示词**：编辑技能时可以让当前 AI 模型优化提示词，适合把草稿提示词整理成更稳定的技能。
+- **多模型比较**：结果页可用同一个技能同时比较默认模型和最多两个备选 OpenAI 兼容模型；默认模型会复用已有结果，不重复生成。
+- **AI 优化提示词**：编辑技能时可以让当前 AI 模型优化提示词。
 - **复制后顺手留档**：点击复制图标会立即复制，随后弹出轻量气泡，可以顺手点一下留档。
-- **重听不重算**：结果页和档案里的重听会播放已有结果，不会重新调用模型生成。
 - **屏幕选框 OCR**：设置里可配置 OCR 快捷键，默认 `Control + Shift + O`，用于处理无法取词或不允许复制的界面。
-- **服务管理**：模型、比较模型、OCR 和语音合成集中在独立服务页管理；常用 OpenAI 兼容服务商可一键填充 Base URL 和模型名，设置页只保留触发、取词、行为、留档等偏好。
+- **服务管理**：模型、比较模型、OCR 和语音合成集中在服务页管理；常用 OpenAI 兼容服务商可一键填充 Base URL 和模型名。
 - **自动更新**：App 会检查当前发行通道的 GitHub Releases，下载后验证并直接安装；如果系统权限不允许自动替换，会打开 DMG 让你手动拖拽。中文和国际版互不串线。
 
 ## 首次启用
 
-1. 打开 App 后授予 **辅助功能** 权限：系统设置 -> 隐私与安全性 -> 辅助功能 -> 打开「过耳不忘」。
-2. 菜单栏耳朵图标 -> **服务管理...**：
+1. 打开 Dob 后授予 **辅助功能** 权限：系统设置 -> 隐私与安全性 -> 辅助功能 -> 打开「Dob」。
+2. 菜单栏图标 -> **服务管理...**：
    - **文本处理**：默认预填 DeepSeek 推荐配置；也可以填写任何 OpenAI 兼容接口的 Base URL、API Key 和模型名。
-   - **服务商预设**：内置 DeepSeek、OpenAI、自定义 OpenAI 兼容、Kimi、通义千问 / 百炼、智谱 GLM、火山方舟、SiliconFlow、Google Gemini、OpenRouter 等预设；点击后只填 Base URL 和模型名，不覆盖 API Key。
+   - **服务商预设**：内置 DeepSeek、OpenAI、自定义 OpenAI 兼容、Kimi、通义千问 / 百炼、智谱 GLM、火山方舟、SiliconFlow、Google Gemini、OpenRouter 等预设。
    - **文本识别**：系统 OCR 使用 Apple Vision 本地识别，无需密钥。
-   - **语音合成**：中文版默认火山引擎 TTS；也可配置 Microsoft、Google、腾讯云 TTS。未配置或失败时回退到 macOS 本地语音。火山服务页提供[官方完整音色列表](https://www.volcengine.com/docs/6561/1257544?lang=zh)链接，也支持手填 `voice_type`。
+   - **语音合成**：中文版默认火山引擎 TTS；也可配置 Microsoft、Google、腾讯云 TTS。未配置或失败时回退到 macOS 本地语音。
 3. 选中任意应用里的文字，等待浮窗弹出，或按弹出面板快捷键 `Option + Command + R`。
-
-> 每次重新构建开发版都会重新签名，macOS 可能作废旧的辅助功能授权。重新构建后请移除旧授权、重新添加 App，并重启。
 
 ## 使用方式
 
-- 选中文字后，浮窗默认显示朗读、解释、翻译、提炼；可在「编辑技能」里启用背景、洞见、盲点、审校等备选技能。
-- 点击技能后，朗读会直接开始；AI 技能会流式生成文字，完整结果生成后朗读。
+- 选中文字后，浮窗默认显示朗读、解释、翻译、提炼；可在「编辑技能」里启用洞见、盲点、审校等备选技能。
+- 点击技能后，朗读会直接开始；AI 技能会流式生成文字，完整结果生成后可按设置自动朗读。
 - 如果当前应用暴露了可访问全文，上下文会自动参与处理；设置里可以关闭「默认使用全文上下文」。
 - 点击复制图标会立即复制文本，并提供轻量留档入口。
 - 点击 **留档** 会写入本地 JSON 和可读 Markdown。
-- 菜单栏耳朵图标 -> **打开档案...** 可搜索主动留档、查看上下文摘录、重听结果。
-- 菜单栏耳朵图标 -> **历史记录...** 可查看最近 500 次静默记录。
-- 菜单栏耳朵图标 -> **今日回响...** 可复习已保存内容。
-- 菜单栏耳朵图标 -> **检查更新...** 可手动检查、下载并安装当前发行通道的新版本。
-- 在 **服务管理 -> 文本处理** 中启用备选比较模型后，AI 技能结果页会出现比较按钮；留档会把一次比较作为一条记录保存。
+- 菜单栏图标 -> **打开档案...** 可搜索主动留档、查看上下文摘录、重听结果。
+- 菜单栏图标 -> **历史记录...** 可查看最近 500 次静默记录。
+- 菜单栏图标 -> **今日回响...** 可复习已保存内容。
+- 菜单栏图标 -> **检查更新...** 可手动检查、下载并安装当前发行通道的新版本。
 
 ## 本地数据
 
-默认数据目录：
+0.3.x 桥接版为了兼容老用户，默认数据目录仍为：
 
 ```text
 ~/Library/Application Support/ListenMark/
@@ -97,23 +92,22 @@
 ```text
 archive.json
 history.json
-过耳不忘.md
+Dob.md
 ```
 
 也可以在设置中选择自己的留档目录，例如 Obsidian vault。Markdown 留档会保留来源、时间、动作、AI 回答和轻量上下文摘录。
-静默历史记录始终保存在应用支持目录的 `history.json`，最多 500 条，不写入全文上下文。
 
 ## 国际版
 
-国际版面向英文用户，安装后 App 名称为 **ListenMark**，见 [README.en.md](README.en.md)。
+国际版面向英文用户，安装后 App 名称为 **Dob International**，见 [README.en.md](README.en.md)。
 
 主要差异：
 
 - 英文界面和英文默认技能名称。
-- 国际版默认本地 macOS 语音，降低首次使用门槛。
+- 默认本地 macOS 语音，降低首次使用门槛。
 - 翻译默认目标是自然英文；如果原文已经是英文，则改写成更清晰自然的英文。
-- 使用 `listenmark-v...` prerelease 通道，不会影响中文版 `v...` 稳定通道。
-- 数据目录为 `~/Library/Application Support/ListenMark International/`。
+- 0.3.x 桥接版仍使用 `listenmark-v...` prerelease 通道，保证旧国际版可自动升级。
+- 数据目录暂时仍为 `~/Library/Application Support/ListenMark International/`。
 
 ## 构建
 
@@ -121,14 +115,14 @@ history.json
 
 ```bash
 ./make-app.sh
-open 过耳不忘.app
+open Dob.app
 ```
 
 构建国际版：
 
 ```bash
 FLAVOR=en ./make-app.sh
-open ListenMark.app
+open "Dob International.app"
 ```
 
 开发运行：
@@ -139,24 +133,16 @@ swift run
 
 ## 代码结构
 
+内部 SwiftPM target 暂时仍叫 `ListenMark`，这是 0.3.x 桥接版为了降低迁移风险保留的技术名；用户可见品牌已经统一为 Dob。
+
 | 路径 | 职责 |
 |---|---|
 | `Sources/ListenMark/AppFlavor.swift` | 中文 / 国际版 flavor、名称、发行通道 |
 | `Sources/ListenMark/AppDelegate.swift` | 菜单栏、触发编排、窗口和动作流 |
 | `Sources/ListenMark/ActionPanel.swift` / `ActionPanelView.swift` | 光标旁浮动动作面板 |
 | `Sources/ListenMark/ActionStore.swift` | 内置技能、自定义技能、排序、快捷键、提示词 |
-| `Sources/ListenMark/ActionsConfigView.swift` | 技能编辑、AI 优化提示词 |
 | `Sources/ListenMark/ServicesView.swift` | 服务管理：默认模型、比较模型、OCR 和语音合成 |
-| `Sources/ListenMark/Hotkey.swift` / `HotkeyRecorder.swift` | 全局快捷键和快捷键录制 |
-| `Sources/ListenMark/SelectionGrabber.swift` | AX 选区、上下文读取、模拟复制回退 |
-| `Sources/ListenMark/ScreenOCR.swift` | 屏幕选框 OCR |
-| `Sources/ListenMark/LLMClient.swift` | OpenAI 兼容 Chat Completions |
-| `Sources/ListenMark/Speaker.swift` / `CloudTTS.swift` / `VolcanoTTS.swift` | 本地语音、火山引擎、Microsoft、Google、腾讯云 TTS |
-| `Sources/ListenMark/ArchiveStore.swift` | 本地 JSON 和 Markdown 留档 |
-| `Sources/ListenMark/HistoryStore.swift` / `HistoryView.swift` | 最近 500 条静默历史记录 |
-| `Sources/ListenMark/ArchiveView.swift` / `ReviewView.swift` | 档案和今日回响 |
 | `Sources/ListenMark/GitHubReleaseUpdater.swift` | GitHub Releases 自动更新 |
-| `Sources/ListenMark/SettingsView.swift` | 偏好设置：触发、取词、行为、留档和入口 |
 
 ## 已知边界
 

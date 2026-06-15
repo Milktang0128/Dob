@@ -103,7 +103,7 @@ final class ArchiveStore: ObservableObject {
     private func exportMarkdown() {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm"
-        var md = "# \(AppFlavor.text("过耳不忘 · 档案", "ListenMark Archive"))\n\n"
+        var md = "# \(AppFlavor.text("Dob · 档案", "Dob Archive"))\n\n"
         for e in entries {
             md += "## \(e.action) · \(df.string(from: e.date)) · \(e.sourceApp)\n\n"
             if let source = e.sourceMetadata?.markdownBlock {

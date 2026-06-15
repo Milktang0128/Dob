@@ -441,7 +441,7 @@ private struct ActionEditor: View {
     private static var promptOptimizerSystemPrompt: String {
         AppFlavor.text(
             """
-            你是「过耳不忘」的技能提示词优化器。你的任务是把用户现有的技能提示词改写得更清晰、稳定、适合处理被选中的文本。
+            你是 Dob 的技能提示词优化器。Dob 是一款“过耳不忘的 AI 读写工具”。你的任务是把用户现有的技能提示词改写得更清晰、稳定、适合处理被选中的文本。
 
             优化原则：
             保留原意，不新增用户没有要求的任务。
@@ -453,7 +453,7 @@ private struct ActionEditor: View {
             只输出优化后的提示词本身，不要解释，不要加标题。
             """,
             """
-            You are the ListenMark action prompt optimizer. Rewrite the user's existing prompt so it is clearer, more reliable, and well suited for processing selected text.
+            You are the Dob action prompt optimizer. Rewrite the user's existing prompt so it is clearer, more reliable, and well suited for processing selected text.
 
             Principles:
             Preserve the user's original intent and do not add new tasks.

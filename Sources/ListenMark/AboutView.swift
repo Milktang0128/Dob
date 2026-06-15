@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AboutView: View {
-    private static let repositoryURL = URL(string: "https://github.com/Milktang0128/ListenMark")!
+    private static let repositoryURL = URL(string: "https://github.com/Milktang0128/Dob")!
 
     private var versionText: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
@@ -24,8 +24,7 @@ struct AboutView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text(AppFlavor.text("划词朗读、解释、翻译、上下文感知 AI 技能与本地留档工具。",
-                                "A macOS tool for selected-text speech, AI actions, context-aware understanding, and local archiving."))
+            Text(AppFlavor.tagline)
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -33,7 +32,7 @@ struct AboutView: View {
 
             VStack(spacing: 8) {
                 Link(destination: Self.repositoryURL) {
-                    Label("github.com/Milktang0128/ListenMark", systemImage: "link")
+                    Label("github.com/Milktang0128/Dob", systemImage: "link")
                         .font(.system(size: 13, weight: .medium))
                 }
 

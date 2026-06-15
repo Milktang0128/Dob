@@ -89,7 +89,7 @@ final class ScreenOCR {
             let text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
         } catch {
-            NSLog("ListenMark · OCR 失败：\(error)")
+            NSLog("Dob · OCR 失败：\(error)")
             return nil
         }
     }
