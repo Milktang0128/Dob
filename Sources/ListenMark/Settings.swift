@@ -542,4 +542,5 @@ extension Notification.Name {
     static let gebwOpenSettings = Notification.Name("GEBWOpenSettings")
     static let gebwOpenActions = Notification.Name("GEBWOpenActions")
     static let gebwOpenServices = Notification.Name("GEBWOpenServices")
+    static let gebwOpenHistory = Notification.Name("GEBWOpenHistory")
 }

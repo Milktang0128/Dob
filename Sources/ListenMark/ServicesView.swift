@@ -138,8 +138,8 @@ struct ServicesView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(AppFlavor.text("服务管理", "Services"))
                     .font(.system(size: 24, weight: .semibold))
-                Text(AppFlavor.text("集中管理文本处理、OCR 和语音合成服务。开启的服务会被技能、比较和朗读流程使用。",
-                                    "Manage text, OCR, and speech services in one place. Enabled services are used by actions, compare, and reading."))
+                Text(AppFlavor.text("添加模型、OCR 和语音服务，用于技能、比较和朗读。",
+                                    "Add model, OCR, and speech services for actions, compare, and reading."))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -286,8 +286,8 @@ struct ServicesView: View {
     private var defaultModelDetail: some View {
         VStack(alignment: .leading, spacing: 18) {
             detailHeader(title: AppFlavor.text("默认模型", "Default Model"),
-                         subtitle: AppFlavor.text("解释、翻译、提炼、自定义技能和提示词优化默认使用这个 OpenAI 兼容服务。比较功能也会把它作为基准结果。",
-                                                  "Explain, Translate, Summarize, custom actions, and prompt optimization use this OpenAI-compatible service by default. Compare uses it as the baseline."),
+                         subtitle: AppFlavor.text("解释、翻译、提炼、自定义技能和提示词优化会优先使用它。",
+                                                  "Explain, Translate, Summarize, custom actions, and prompt optimization use this first."),
                          icon: "sparkles",
                          status: llmAPIKey.isEmpty ? AppFlavor.text("未配置", "Missing Key") : AppFlavor.text("已配置", "Configured"))
             presetGrid { preset in
@@ -323,8 +323,8 @@ struct ServicesView: View {
                     llmModel = Settings.recommendedLLMModel
                 }
             }
-            helperText(AppFlavor.text("DeepSeek 是预填推荐。你也可以使用任何 OpenAI Chat Completions 兼容接口；如果 Base URL 已经以 /chat/completions 结尾，会按完整地址调用。",
-                                      "DeepSeek is the prefilled recommendation. Any OpenAI Chat Completions-compatible endpoint works; a full /chat/completions URL is used as-is."))
+            helperText(AppFlavor.text("也可以填写任何 OpenAI Chat Completions 兼容接口；完整 /chat/completions 地址可直接使用。",
+                                      "Any OpenAI Chat Completions-compatible endpoint works; a full /chat/completions URL can be used as-is."))
         }
     }
 
@@ -332,8 +332,8 @@ struct ServicesView: View {
         if let provider = llmProviders.first(where: { $0.id == id }) {
             VStack(alignment: .leading, spacing: 18) {
                 detailHeader(title: provider.label.isEmpty ? AppFlavor.text("未命名服务", "Unnamed Service") : provider.label,
-                             subtitle: AppFlavor.text("OpenAI Chat Completions 兼容服务。可以被单个技能指定，也可以加入比较池。",
-                                                      "OpenAI Chat Completions-compatible service. Actions can use it directly, and it can join the compare pool."),
+                             subtitle: AppFlavor.text("可指定给某个技能，也可加入比较。",
+                                                      "Use it for specific actions or model comparison."),
                              icon: "rectangle.2.swap",
                              status: providerStatus(provider))
                 presetGrid { preset in
@@ -351,8 +351,8 @@ struct ServicesView: View {
                     Toggle(AppFlavor.text("参与比较", "Use for Compare"), isOn: providerBoolBinding(id: id, keyPath: \.compareEnabled))
                         .toggleStyle(.switch)
                         .disabled(!provider.enabled)
-                    helperText(AppFlavor.text("比较运行时会使用当前技能的主服务，再从已开启比较的服务里取最多两个备选。",
-                                              "Compare uses the action's primary service plus up to two compare-enabled alternates."))
+                    helperText(AppFlavor.text("比较时最多同时显示三个模型结果。",
+                                              "Compare can show up to three model results at once."))
                 }
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.035)))
@@ -378,8 +378,8 @@ struct ServicesView: View {
                     }
                     .disabled(!provider.isConfigured)
                 }
-                helperText(AppFlavor.text("设为默认会把此服务写入默认模型配置；原默认配置不会自动变成一个额外服务。",
-                                          "Setting as default writes this service into the default model config; the previous default is not automatically duplicated."))
+                helperText(AppFlavor.text("设为默认后，未指定模型的技能会使用此服务。",
+                                          "After setting as default, actions without a chosen model use this service."))
             }
         } else {
             ContentUnavailableView(AppFlavor.text("服务不存在", "Service Not Found"),
@@ -403,8 +403,8 @@ struct ServicesView: View {
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.035)))
-            helperText(AppFlavor.text("OCR 服务本身不需要密钥。快捷键、静默复制和自动执行属于取词工作流，也可以在偏好设置里调整。",
-                                      "OCR itself needs no key. Hotkeys, silent copy, and auto-run behavior are capture workflow preferences and can also be adjusted in Preferences."))
+            helperText(AppFlavor.text("OCR 不需要密钥。快捷键和自动执行也可以在「偏好」里调整。",
+                                      "OCR needs no key. Hotkeys and auto-run can also be changed in Preferences."))
         }
     }
 
@@ -810,8 +810,8 @@ struct ServicesView: View {
                     .help("\(endpointLabel) · \(modelLabel)")
                 }
             }
-            helperText(AppFlavor.text("点击预设只会填充 Base URL 和模型名，不会覆盖 API Key；模型名仍可按账号权限手动修改。",
-                                      "A preset fills Base URL and model only; it does not overwrite your API key. You can still edit the model name."))
+            helperText(AppFlavor.text("预设只填充 Base URL 和模型名，不会覆盖 API Key。",
+                                      "Presets fill Base URL and model only; your API key is not overwritten."))
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.025)))

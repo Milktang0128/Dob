@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var autoPopMouseDownLocation: NSPoint?
     private var autoPopDidDrag = false
     private var autoPopGeneration = 0
+    private var autoPopMouseDownAppBundleID: String?
     private var lastAutoCopyFallbackAt = Date.distantPast
 
     private var archiveWindow: NSWindow?
@@ -62,9 +63,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                name: .gebwOpenSettings, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(openServices),
                                                name: .gebwOpenServices, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(openHistory),
+                                               name: .gebwOpenHistory, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(appActivated(_:)),
                                                           name: NSWorkspace.didActivateApplicationNotification, object: nil)
-        if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { enableAX(pid) }
+        if let app = NSWorkspace.shared.frontmostApplication, !isBuiltInAutoPopProtected(app) {
+            enableAX(app.processIdentifier)
+        }
         checkTrust()
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             GitHubReleaseUpdater.shared.checkAutomaticallyIfNeeded()
@@ -73,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func appActivated(_ note: Notification) {
         if let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            guard !isBuiltInAutoPopProtected(app) else { return }
             enableAX(app.processIdentifier)
         }
     }
@@ -245,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !isFrontmostAppAutoPopDisabled() else {
             autoPopMouseDownLocation = nil
             autoPopDidDrag = false
+            autoPopMouseDownAppBundleID = nil
             clearAutoSelectionState()
             return
         }
@@ -252,19 +259,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .leftMouseDown:
             autoPopMouseDownLocation = event.locationInWindow
             autoPopDidDrag = false
+            autoPopMouseDownAppBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         case .leftMouseDragged:
             guard let start = autoPopMouseDownLocation else {
                 autoPopMouseDownLocation = event.locationInWindow
+                autoPopMouseDownAppBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 return
             }
             if distance(from: start, to: event.locationInWindow) > 5 {
                 autoPopDidDrag = true
             }
         case .leftMouseUp:
+            guard !didAutoPopDragMoveToAnotherApp() else {
+                autoPopMouseDownLocation = nil
+                autoPopDidDrag = false
+                autoPopMouseDownAppBundleID = nil
+                clearAutoSelectionState()
+                return
+            }
             let moved = autoPopMouseDownLocation.map { distance(from: $0, to: event.locationInWindow) > 5 } ?? false
             let allowCopyFallback = autoPopDidDrag || moved || event.clickCount > 1
             autoPopMouseDownLocation = nil
             autoPopDidDrag = false
+            autoPopMouseDownAppBundleID = nil
             handleSelectionMouseUp(allowCopyFallback: allowCopyFallback)
         default:
             break
@@ -684,9 +701,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func isFrontmostAppAutoPopDisabled() -> Bool {
-        guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-              bundleID != AppFlavor.bundleIdentifier else { return false }
-        return Settings.isAutoPopDisabled(bundleID: bundleID)
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.bundleIdentifier != AppFlavor.bundleIdentifier else { return false }
+        return isAutoPopDisabled(for: app)
+    }
+
+    private func didAutoPopDragMoveToAnotherApp() -> Bool {
+        guard let startedBundleID = autoPopMouseDownAppBundleID,
+              let currentBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+              currentBundleID != AppFlavor.bundleIdentifier else { return false }
+        return currentBundleID != startedBundleID
+    }
+
+    private func isAutoPopDisabled(for app: NSRunningApplication) -> Bool {
+        let bundleID = app.bundleIdentifier
+        return Settings.isAutoPopDisabled(bundleID: bundleID) || isBuiltInAutoPopProtected(app)
+    }
+
+    private func isBuiltInAutoPopProtected(_ app: NSRunningApplication) -> Bool {
+        let bundleID = app.bundleIdentifier?.lowercased() ?? ""
+        let name = app.localizedName?.lowercased() ?? ""
+        guard bundleID != AppFlavor.bundleIdentifier.lowercased() else { return false }
+
+        if bundleID == "pl.maketheweb.cleanshotx" { return true }
+
+        let protectedFragments = [
+            "cleanshot", "screenshot", "screen-shot", "screen_shot",
+            "shottr", "snipaste", "xnip", "monosnap", "screenfloat"
+        ]
+        if protectedFragments.contains(where: { bundleID.contains($0) || name.contains($0) }) {
+            return true
+        }
+
+        let protectedNames = ["截屏", "截图", "屏幕快照"]
+        return protectedNames.contains { name.contains($0) }
     }
 
     private func currentDisableCandidate() -> (bundleID: String, appName: String)? {

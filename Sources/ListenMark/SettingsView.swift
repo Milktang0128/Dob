@@ -47,36 +47,10 @@ struct SettingsView: View {
     @AppStorage("historyEnabled") private var historyEnabled = true
     @AppStorage("archiveFolder") private var archiveFolder = ""
 
-    @AppStorage("deepseekKey") private var llmAPIKey = ""
-    @AppStorage("deepseekModel") private var llmModel = Settings.recommendedLLMModel
-    @AppStorage("ttsEngine") private var ttsEngine = AppFlavor.text("volcano", "local")
-    @AppStorage("volcAppId") private var volcAppId = ""
-    @AppStorage("volcToken") private var volcToken = ""
     @State private var disabledAppsRevision = 0
 
     init(initialPage: SettingsPage = .preferences) {
         _page = State(initialValue: initialPage)
-    }
-
-    private var compareCount: Int {
-        Settings.llmServiceProviders.filter { $0.enabled && $0.compareEnabled }.count
-    }
-
-    private var speechStatus: String {
-        switch ttsEngine {
-        case "local":
-            return AppFlavor.text("本地语音", "Local Speech")
-        case "volcano":
-            return Settings.volcConfigured ? AppFlavor.text("火山引擎", "Volcengine") : AppFlavor.text("火山未配置，回退本地", "Volcengine missing, falls back")
-        case "microsoft":
-            return Settings.microsoftTTSConfigured ? AppFlavor.text("Microsoft 语音", "Microsoft Speech") : AppFlavor.text("Microsoft 未配置，回退本地", "Microsoft missing, falls back")
-        case "google":
-            return Settings.googleTTSConfigured ? AppFlavor.text("Google 语音", "Google Speech") : AppFlavor.text("Google 未配置，回退本地", "Google missing, falls back")
-        case "tencent":
-            return Settings.tencentTTSConfigured ? AppFlavor.text("腾讯云语音", "Tencent TTS") : AppFlavor.text("腾讯云未配置，回退本地", "Tencent missing, falls back")
-        default:
-            return AppFlavor.text("本地语音", "Local Speech")
-        }
     }
 
     var body: some View {
@@ -145,7 +119,6 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
-                quickLinks
                 captureSection
                 fallbackSection
                 behaviorSection
@@ -159,44 +132,25 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(AppFlavor.text("设置", "Settings"))
                 .font(.system(size: 24, weight: .semibold))
-            Text(AppFlavor.text("这里管理使用偏好和工作流。模型、OCR、语音等供应商配置集中放在服务管理中。",
-                                "Manage preferences and workflows here. Model, OCR, and speech providers live in Services."))
+            Text(AppFlavor.text("调整工具条、取词、输入、OCR 和朗读行为。",
+                                "Adjust panel, capture, input, OCR, and speech behavior."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var quickLinks: some View {
-        SettingsSection(title: AppFlavor.text("核心入口", "Core Entrypoints"),
-                        subtitle: AppFlavor.text("服务、技能、留档和关于都收在同一个设置窗口里，减少来回切换。",
-                                                 "Services, actions, archive, and about are kept in one settings window to reduce context switching.")) {
-            HStack(spacing: 10) {
-                SettingsNavButton(title: AppFlavor.text("服务管理", "Services"),
-                                  subtitle: serviceSummary,
-                                  icon: "server.rack") {
-                    page = .services
-                }
-                SettingsNavButton(title: AppFlavor.text("编辑技能", "Edit Actions"),
-                                  subtitle: AppFlavor.text("排序、快捷键、提示词", "Order, hotkeys, prompts"),
-                                  icon: "slider.horizontal.3") {
-                    page = .actions
-                }
-            }
-        }
-    }
-
     private var captureSection: some View {
         SettingsSection(title: AppFlavor.text("触发与自动弹出", "Trigger and Auto-Pop"),
-                        subtitle: AppFlavor.text("决定工具条何时出现，以及取词失败时是否启用兼容方案。",
-                                                 "Controls when the panel appears and whether compatibility capture is allowed.")) {
+                        subtitle: AppFlavor.text("选择文字后是否显示工具条，以及取不到文字时是否尝试复制读取。",
+                                                 "Choose when the panel appears and whether Dob can try copy-based capture.")) {
             SettingToggle(title: AppFlavor.text("划词后自动弹出", "Show after selection"),
                           subtitle: AppFlavor.text("选中文本后自动显示工具条。", "Show the panel automatically after selecting text."),
                           isOn: $autoPop) {
                 NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
             }
-            SettingToggle(title: AppFlavor.text("兼容模式：临时复制取词", "Compatibility mode: temporary copy"),
-                          subtitle: AppFlavor.text("用于微信内置浏览器等不暴露标准选区的界面。会尽量恢复原剪贴板。",
-                                                   "Helps in WebViews that do not expose standard selection. The clipboard is restored when possible."),
+            SettingToggle(title: AppFlavor.text("取不到文字时尝试复制读取", "Try copy-based capture"),
+                          subtitle: AppFlavor.text("适合微信内置浏览器等难取词界面；会尽量恢复原剪贴板。",
+                                                   "Helps in WebViews and hard-to-capture apps; the clipboard is restored when possible."),
                           isOn: $autoPopCopyFallback)
                 .disabled(!autoPop)
             SettingToggle(title: AppFlavor.text("无操作自动消失", "Auto-hide when idle"),
@@ -262,9 +216,9 @@ struct SettingsView: View {
     }
 
     private var fallbackSection: some View {
-        SettingsSection(title: AppFlavor.text("输入与 OCR 兜底", "Input and OCR Fallbacks"),
-                        subtitle: AppFlavor.text("处理无法直接取词、无法复制、或想手动输入内容的场景。",
-                                                 "For apps where direct capture fails, copying is blocked, or you want to type manually.")) {
+        SettingsSection(title: AppFlavor.text("输入与 OCR", "Input and OCR"),
+                        subtitle: AppFlavor.text("无法取词时，可以手动输入、框选识别，或直接复制 OCR 结果。",
+                                                 "When capture fails, type manually, select a screen region, or copy OCR text directly.")) {
             HotkeySetting(title: AppFlavor.text("输入面板", "Input panel"),
                           subtitle: AppFlavor.text("打开工具条和文本框，可粘贴或输入任意内容再处理。",
                                                    "Open the toolbar with a text box, then paste or type any text."),
@@ -302,8 +256,8 @@ struct SettingsView: View {
 
     private var behaviorSection: some View {
         SettingsSection(title: AppFlavor.text("结果行为", "Result Behavior"),
-                        subtitle: AppFlavor.text("控制 AI 技能如何使用上下文，以及生成后是否自动朗读。",
-                                                 "Controls context use and whether AI results are spoken automatically.")) {
+                        subtitle: AppFlavor.text("选择 AI 回答是否带上下文，以及生成后是否读出来。",
+                                                 "Choose whether AI uses context and whether results are spoken aloud.")) {
             SettingToggle(title: AppFlavor.text("默认使用全文上下文", "Use full-text context by default"),
                           subtitle: AppFlavor.text("能拿到全文时，把选中内容和上下文一起交给模型；拿不到时自动回退。",
                                                    "When available, send both selection and surrounding context to the model; otherwise fall back."),
@@ -317,15 +271,16 @@ struct SettingsView: View {
 
     private var archiveSection: some View {
         SettingsSection(title: AppFlavor.text("留档与历史", "Archive and History"),
-                        subtitle: AppFlavor.text("它们是两套记录：留档用于复习，历史用于临时回看。",
-                                                 "These are separate records: Archive is for review, History is for quick lookup.")) {
+                        subtitle: AppFlavor.text("留档用于长期复习；历史用于临时回看。",
+                                                 "Archive is for review; History is for quick lookup.")) {
             archiveSubsectionHeader(icon: "tray.and.arrow.down.fill",
                                     title: AppFlavor.text("主动留档", "Archive"),
                                     subtitle: AppFlavor.text("进入 Markdown 档案和今日回响，适合长期复习。",
                                                              "Saved into Markdown archive and Review, for long-term recall."))
             SettingToggle(title: AppFlavor.text("自动留档每次动作", "Auto-save every action"),
-                          subtitle: AppFlavor.text("默认关闭。通常点击结果卡上的留档更可控。", "Off by default. Saving from the result card is usually more deliberate."),
+                          subtitle: AppFlavor.text("关闭后，只在你点击「留档」时保存。", "When off, Dob saves only when you click Save."),
                           isOn: $autoArchive)
+            archiveLocationControls
             Divider()
             archiveSubsectionHeader(icon: "clock.arrow.circlepath",
                                     title: AppFlavor.text("静默历史", "Silent History"),
@@ -335,28 +290,36 @@ struct SettingsView: View {
                           subtitle: AppFlavor.text("保存原文、结果、动作和来源；不保存全文上下文。",
                                                    "Stores source text, result, action, and app. Full-text context is not stored."),
                           isOn: $historyEnabled)
-            Divider()
-            VStack(alignment: .leading, spacing: 8) {
-                Text(AppFlavor.text("Markdown 留存位置", "Markdown archive location"))
-                    .font(.system(size: 13, weight: .semibold))
-                HStack {
-                    Text(archiveFolder.isEmpty ? AppFlavor.text("默认：应用支持目录", "Default: Application Support") : archiveFolder)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    Button(AppFlavor.text("选择…", "Choose…")) { pickFolder() }
+            Button {
+                NotificationCenter.default.post(name: .gebwOpenHistory, object: nil)
+            } label: {
+                Label(AppFlavor.text("打开历史记录", "Open History"), systemImage: "clock.arrow.circlepath")
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private var archiveLocationControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(AppFlavor.text("Markdown 留存位置", "Markdown archive location"))
+                .font(.system(size: 13, weight: .semibold))
+            HStack {
+                Text(archiveFolder.isEmpty ? AppFlavor.text("默认：应用支持目录", "Default: Application Support") : archiveFolder)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button(AppFlavor.text("选择…", "Choose…")) { pickFolder() }
+            }
+            HStack {
+                Button(AppFlavor.text("在访达中显示", "Show in Finder")) {
+                    NSWorkspace.shared.open(ArchiveStore.shared.revealFolder)
                 }
-                HStack {
-                    Button(AppFlavor.text("在访达中显示", "Show in Finder")) {
-                        NSWorkspace.shared.open(ArchiveStore.shared.revealFolder)
-                    }
-                    if !archiveFolder.isEmpty {
-                        Button(AppFlavor.text("用默认", "Use Default")) {
-                            archiveFolder = ""
-                            ArchiveStore.shared.relocate()
-                        }
+                if !archiveFolder.isEmpty {
+                    Button(AppFlavor.text("用默认", "Use Default")) {
+                        archiveFolder = ""
+                        ArchiveStore.shared.relocate()
                     }
                 }
             }
@@ -378,12 +341,6 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    private var serviceSummary: String {
-        let ai = llmAPIKey.isEmpty ? AppFlavor.text("AI 未配置", "AI missing") : AppFlavor.text("AI 已配置", "AI ready")
-        let compare = compareCount == 0 ? AppFlavor.text("无比较模型", "No compare") : AppFlavor.text("\(compareCount) 个比较模型", "\(compareCount) compare")
-        return "\(ai) · \(compare) · \(speechStatus)"
     }
 
     private func pickFolder() {
@@ -430,40 +387,6 @@ private struct SettingsSection<Content: View>: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
         }
-    }
-}
-
-private struct SettingsNavButton: View {
-    let title: String
-    let subtitle: String
-    let icon: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 26)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.04)))
-        }
-        .buttonStyle(.plain)
     }
 }
 

@@ -29,7 +29,7 @@ struct ActionsConfigView: View {
                         .listRowBackground(Color.clear)
                 }
             } header: {
-                Text(AppFlavor.text("朗读固定第一；拖动左侧把手调整其它技能；浮窗显示前 5 个启用技能，其余收在更多菜单", "Read stays first. Drag the handle to reorder other actions. The panel shows the first 5 enabled actions; the rest live in More."))
+                Text(AppFlavor.text("拖动把手调整顺序。朗读固定第一，工具条最多显示前 5 个启用技能。", "Drag handles to reorder actions. Read stays first; the panel shows up to 5 enabled actions."))
             }
 
             Section {
@@ -47,7 +47,7 @@ struct ActionsConfigView: View {
 
                 Button(AppFlavor.text("恢复默认技能", "Restore Default Actions"), role: .destructive) { store.resetToDefaults() }
             } footer: {
-                Text(AppFlavor.text("技能快捷键会直接处理当前选中文本。自定义技能会调用大模型，按你的提示词生成内容并念出来。", "Action hotkeys process the current selection directly. Custom actions call the model with your prompt and read the result aloud."))
+                Text(AppFlavor.text("技能快捷键可直接处理选中文本。自定义技能会按你的提示词生成结果。", "Action hotkeys process selected text directly. Custom actions use your prompt to generate a result."))
             }
         }
         .listStyle(.inset)
@@ -342,14 +342,14 @@ private struct ActionEditor: View {
                     }
                     .labelsHidden()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(AppFlavor.text("未指定时使用服务页里的默认模型。", "When unspecified, this action uses the default model from Services."))
+                    Text(AppFlavor.text("不选择时使用默认模型。", "Uses the default model when none is selected."))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(AppFlavor.text("生成提示词（告诉模型怎么处理选中的文本）", "Generation prompt (tell the model how to process the selected text)"))
+                        Text(AppFlavor.text("提示词", "Prompt"))
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         Button {

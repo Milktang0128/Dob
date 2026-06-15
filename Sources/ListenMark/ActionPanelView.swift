@@ -313,7 +313,7 @@ struct ActionPanelView: View {
                     PanelInputTextView(text: inputBinding, focusRequest: inputFocusRequest)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if model.inputText.isEmpty {
-                        Text(AppFlavor.text("粘贴或输入任意内容，然后选择上方技能处理", "Paste or type any text, then choose an action above"))
+                        Text(AppFlavor.text("粘贴或输入任意内容，然后选择一个技能处理", "Paste or type any text, then choose an action"))
                             .font(.system(size: 13))
                             .foregroundStyle(.tertiary)
                             .padding(.top, 1)
@@ -344,7 +344,7 @@ struct ActionPanelView: View {
                     Text(AppFlavor.text("\(source) 已识别", "\(source) recognized"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.primary)
-                    Text(AppFlavor.text("已取得 \(text.count) 字，选择上方技能继续处理", "\(text.count) characters captured. Choose an action above to continue."))
+                    Text(AppFlavor.text("已取得 \(text.count) 字，选择一个技能继续", "\(text.count) characters captured. Choose an action to continue."))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -367,9 +367,9 @@ struct ActionPanelView: View {
         case .result(let action, let icon, let text, let replay, let archived, let compact, let contextUsed):
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 6) {
-                    Image(systemName: archived ? "checkmark.seal.fill" : icon)
+                    Image(systemName: icon)
                         .font(.system(size: 11))
-                        .foregroundStyle(archived ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(.secondary)
                     Text(action)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -387,7 +387,7 @@ struct ActionPanelView: View {
                     speechStatusPill
                     Spacer()
                     if archived {
-                        Text(AppFlavor.text("已留档", "Saved")).font(.system(size: 10)).foregroundStyle(.tertiary)
+                        archiveStatusLabel
                     }
                 }
 
@@ -431,7 +431,7 @@ struct ActionPanelView: View {
                     }
                     Spacer()
                     if archived {
-                        Text(AppFlavor.text("已留档", "Saved")).font(.system(size: 10)).foregroundStyle(.tertiary)
+                        archiveStatusLabel
                     }
                 }
 
@@ -568,6 +568,14 @@ struct ActionPanelView: View {
                 .help(AppFlavor.text("正在通过 \(provider) 生成语音，稍后会自动播放。",
                                      "Generating speech with \(provider). Playback will start shortly."))
         }
+    }
+
+    private var archiveStatusLabel: some View {
+        Label(AppFlavor.text("已留档", "Saved"), systemImage: "checkmark.seal.fill")
+            .font(.system(size: 10, weight: .medium))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(.green)
+            .fixedSize()
     }
 
     private var inputBinding: Binding<String> {
