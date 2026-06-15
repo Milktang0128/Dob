@@ -34,7 +34,8 @@ struct ArchiveView: View {
         return base.filter {
             $0.original.localizedCaseInsensitiveContains(q) ||
             ($0.response ?? "").localizedCaseInsensitiveContains(q) ||
-            ($0.contextExcerpt ?? "").localizedCaseInsensitiveContains(q)
+            ($0.contextExcerpt ?? "").localizedCaseInsensitiveContains(q) ||
+            ($0.sourceMetadata?.searchText ?? "").localizedCaseInsensitiveContains(q)
         }
     }
 
@@ -159,6 +160,25 @@ private struct EntryCard: View {
                 Button { store.delete(entry) } label: {
                     Image(systemName: "trash").font(.system(size: 13))
                 }.buttonStyle(.plain).foregroundStyle(hover ? .secondary : .tertiary).help(AppFlavor.text("删除", "Delete"))
+            }
+
+            if let summary = entry.sourceMetadata?.compactSummary {
+                HStack(spacing: 6) {
+                    Image(systemName: entry.sourceMetadata?.pageURL == nil ? "macwindow" : "link")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    Text(summary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if let url = entry.sourceMetadata?.pageURL {
+                        Text(url)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
             }
 
             Text(entry.original)

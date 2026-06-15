@@ -1,8 +1,40 @@
 import SwiftUI
 
+enum SettingsPage: String, CaseIterable, Identifiable {
+    case preferences
+    case services
+    case actions
+    case archive
+    case about
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .preferences: return AppFlavor.text("偏好", "Preferences")
+        case .services: return AppFlavor.text("服务", "Services")
+        case .actions: return AppFlavor.text("技能", "Actions")
+        case .archive: return AppFlavor.text("留档", "Archive")
+        case .about: return AppFlavor.text("关于", "About")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .preferences: return "slider.horizontal.3"
+        case .services: return "server.rack"
+        case .actions: return "wand.and.stars"
+        case .archive: return "tray.and.arrow.down.fill"
+        case .about: return "info.circle"
+        }
+    }
+}
+
 struct SettingsView: View {
+    @State private var page: SettingsPage
     @AppStorage("autoPop") private var autoPop = true
     @AppStorage("autoPopCopyFallback") private var autoPopCopyFallback = true
+    @AppStorage("autoDismissPanel") private var autoDismissPanel = true
     @AppStorage("hkDisplay") private var hkDisplay = "⌥⌘R"
     @AppStorage("ocrHkDisplay") private var ocrHkDisplay = "⌃⇧O"
     @AppStorage("silentOcrHkDisplay") private var silentOcrHkDisplay = "⌃⇧C"
@@ -17,14 +49,17 @@ struct SettingsView: View {
 
     @AppStorage("deepseekKey") private var llmAPIKey = ""
     @AppStorage("deepseekModel") private var llmModel = Settings.recommendedLLMModel
-    @AppStorage("compareProvider1Enabled") private var compareProvider1Enabled = false
-    @AppStorage("compareProvider2Enabled") private var compareProvider2Enabled = false
     @AppStorage("ttsEngine") private var ttsEngine = AppFlavor.text("volcano", "local")
     @AppStorage("volcAppId") private var volcAppId = ""
     @AppStorage("volcToken") private var volcToken = ""
+    @State private var disabledAppsRevision = 0
+
+    init(initialPage: SettingsPage = .preferences) {
+        _page = State(initialValue: initialPage)
+    }
 
     private var compareCount: Int {
-        (compareProvider1Enabled ? 1 : 0) + (compareProvider2Enabled ? 1 : 0)
+        Settings.llmServiceProviders.filter { $0.enabled && $0.compareEnabled }.count
     }
 
     private var speechStatus: String {
@@ -45,6 +80,68 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 172)
+            Divider()
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 980, minHeight: 680)
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(AppFlavor.appName)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 16)
+                .padding(.bottom, 6)
+            ForEach(SettingsPage.allCases) { item in
+                Button {
+                    page = item
+                } label: {
+                    Label(item.title, systemImage: item.icon)
+                        .font(.system(size: 13, weight: page == item ? .semibold : .regular))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(page == item ? Color.accentColor.opacity(0.14) : Color.clear))
+                        .foregroundStyle(page == item ? Color.accentColor : Color.primary)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .background(.bar)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch page {
+        case .preferences:
+            preferencesPane
+        case .services:
+            ServicesView()
+        case .actions:
+            ActionsConfigView()
+                .padding(10)
+        case .archive:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    archiveSection
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        case .about:
+            AboutView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var preferencesPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
@@ -52,13 +149,10 @@ struct SettingsView: View {
                 captureSection
                 fallbackSection
                 behaviorSection
-                archiveSection
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(width: 540)
-        .frame(minHeight: 660)
     }
 
     private var header: some View {
@@ -74,18 +168,18 @@ struct SettingsView: View {
 
     private var quickLinks: some View {
         SettingsSection(title: AppFlavor.text("核心入口", "Core Entrypoints"),
-                        subtitle: AppFlavor.text("高频配置尽量保持在单独窗口，避免一个设置页承担所有事情。",
-                                                 "High-impact configuration stays in dedicated windows so this page remains focused.")) {
+                        subtitle: AppFlavor.text("服务、技能、留档和关于都收在同一个设置窗口里，减少来回切换。",
+                                                 "Services, actions, archive, and about are kept in one settings window to reduce context switching.")) {
             HStack(spacing: 10) {
                 SettingsNavButton(title: AppFlavor.text("服务管理", "Services"),
                                   subtitle: serviceSummary,
                                   icon: "server.rack") {
-                    NotificationCenter.default.post(name: .gebwOpenServices, object: nil)
+                    page = .services
                 }
                 SettingsNavButton(title: AppFlavor.text("编辑技能", "Edit Actions"),
                                   subtitle: AppFlavor.text("排序、快捷键、提示词", "Order, hotkeys, prompts"),
                                   icon: "slider.horizontal.3") {
-                    NotificationCenter.default.post(name: .gebwOpenActions, object: nil)
+                    page = .actions
                 }
             }
         }
@@ -105,6 +199,13 @@ struct SettingsView: View {
                                                    "Helps in WebViews that do not expose standard selection. The clipboard is restored when possible."),
                           isOn: $autoPopCopyFallback)
                 .disabled(!autoPop)
+            SettingToggle(title: AppFlavor.text("无操作自动消失", "Auto-hide when idle"),
+                          subtitle: AppFlavor.text("工具条出现后，鼠标明显远离且未触及工具条时自动渐隐；固定窗口不受影响。",
+                                                   "After the panel appears, fade it out when the pointer clearly moves away without entering it. Pinned windows are unaffected."),
+                          isOn: $autoDismissPanel) {
+                NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+            }
+            disabledAppsList
             HotkeySetting(title: AppFlavor.text("弹出工具条", "Show panel"),
                           subtitle: AppFlavor.text("手动处理当前选中文本。", "Manually process the current selection."),
                           display: $hkDisplay) { code, mods, disp in
@@ -113,6 +214,49 @@ struct SettingsView: View {
                 Settings.hotKeyDisplay = disp
                 hkDisplay = disp
                 NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+            }
+        }
+    }
+
+    private var disabledApps: [(bundleID: String, name: String)] {
+        _ = disabledAppsRevision
+        return Settings.disabledAutoPopAppsSorted
+    }
+
+    @ViewBuilder private var disabledAppsList: some View {
+        let apps = disabledApps
+        if !apps.isEmpty {
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text(AppFlavor.text("已禁用自动弹出的应用", "Apps with Auto-Pop Disabled"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(apps, id: \.bundleID) { app in
+                    HStack(spacing: 10) {
+                        Image(systemName: "app")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(app.name)
+                                .font(.system(size: 12, weight: .medium))
+                                .lineLimit(1)
+                            Text(app.bundleID)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button(AppFlavor.text("恢复", "Enable")) {
+                            Settings.enableAutoPop(bundleID: app.bundleID)
+                            disabledAppsRevision += 1
+                            NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+                        }
+                        .controlSize(.small)
+                    }
+                    .padding(.vertical, 2)
+                }
             }
         }
     }

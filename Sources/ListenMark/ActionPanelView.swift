@@ -46,6 +46,56 @@ enum ActionResultLayout {
     }
 }
 
+enum ActionCompareLayout {
+    static let viewportMaxHeight: CGFloat = 430
+
+    private static let outerHorizontalPadding: CGFloat = 28
+    private static let cardHorizontalPadding: CGFloat = 18
+    private static let cardVerticalPadding: CGFloat = 18
+    private static let rowSpacing: CGFloat = 8
+    private static let textLineSpacing: CGFloat = 2
+
+    static func viewportHeight(for results: [CompareModelResult], panelWidth: CGFloat) -> CGFloat {
+        let cardTotal = results.map { cardHeight(for: $0, panelWidth: panelWidth) }.reduce(0, +)
+        let spacing = CGFloat(max(results.count - 1, 0)) * rowSpacing
+        return min(max(cardTotal + spacing, 160), viewportMaxHeight)
+    }
+
+    static func panelHeight(for results: [CompareModelResult], panelWidth: CGFloat, barHeight: CGFloat) -> CGFloat {
+        let headerHeight: CGFloat = 18
+        let controlsHeight: CGFloat = 28
+        let outerVerticalPadding: CGFloat = 31
+        let verticalSpacing: CGFloat = 18
+        return barHeight + headerHeight + viewportHeight(for: results, panelWidth: panelWidth) + controlsHeight + outerVerticalPadding + verticalSpacing
+    }
+
+    private static func cardHeight(for result: CompareModelResult, panelWidth: CGFloat) -> CGFloat {
+        let textHeight: CGFloat
+        if result.isLoading || result.error != nil || result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            textHeight = 34
+        } else {
+            textHeight = measuredTextHeight(result.text, panelWidth: panelWidth)
+        }
+        return 22 + textHeight + cardVerticalPadding
+    }
+
+    private static func measuredTextHeight(_ text: String, panelWidth: CGFloat) -> CGFloat {
+        let width = max(220, panelWidth - outerHorizontalPadding - cardHorizontalPadding)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = textLineSpacing
+        let fontSize = CGFloat(13 + Settings.panelTextSizeDelta)
+        let rect = (text as NSString).boundingRect(
+            with: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [
+                .font: NSFont.systemFont(ofSize: fontSize),
+                .paragraphStyle: paragraph
+            ]
+        )
+        return min(max(ceil(rect.height) + 2, 42), 138)
+    }
+}
+
 /// Drives the floating panel. The toolbar is data-driven from ActionStore;
 /// the row is a fixed slim height and never grows — results appear in a capped
 /// card below it (and 朗读 stays compact).
@@ -69,6 +119,7 @@ final class PanelModel: ObservableObject {
     @Published var pinned = false
     @Published var canCompare = false
     @Published var selectedCompareID: String?
+    @Published var disableAppName: String?
 
     var onPick: ((ActionDef) -> Void)?
     var onInputChanged: ((String) -> Void)?
@@ -83,6 +134,8 @@ final class PanelModel: ObservableObject {
     var onCompare: (() -> Void)?
     var onTogglePin: (() -> Void)?
     var onAutoSpeakChanged: ((Bool) -> Void)?
+    var onDisableForCurrentApp: (() -> Void)?
+    var onDisableGlobally: (() -> Void)?
     var onClose: (() -> Void)?
     var onOpenArchive: (() -> Void)?
     var onOpenSettings: (() -> Void)?
@@ -183,6 +236,22 @@ struct ActionPanelView: View {
                 Button(AppFlavor.text("编辑技能…", "Edit Actions…")) { model.onOpenActions?() }
                 Button(AppFlavor.text("打开档案…", "Open Archive…")) { model.onOpenArchive?() }
                 Button(AppFlavor.text("设置…", "Settings…")) { model.onOpenSettings?() }
+                Divider()
+                Menu {
+                    Button {
+                        model.onDisableForCurrentApp?()
+                    } label: {
+                        Label(AppFlavor.text("在此应用中禁用", "Disable in This App"), systemImage: "app")
+                    }
+                    .disabled(model.disableAppName == nil)
+                    Button {
+                        model.onDisableGlobally?()
+                    } label: {
+                        Label(AppFlavor.text("全局禁用", "Disable Globally"), systemImage: "globe")
+                    }
+                } label: {
+                    Label(AppFlavor.text("禁用", "Disable"), systemImage: "nosign")
+                }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 13, weight: .semibold))
@@ -364,45 +433,15 @@ struct ActionPanelView: View {
                     }
                 }
 
-                Picker("", selection: compareSelectionBinding(results)) {
-                    ForEach(results) { result in
-                        Text(result.label).tag(result.id)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-
-                let selected = selectedCompareResult(in: results)
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Text(selected?.model ?? "")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                        Spacer()
-                        if selected?.isLoading == true {
-                            ProgressView().controlSize(.small)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(results) { result in
+                            compareResultCard(result)
                         }
                     }
-                    if let error = selected?.error {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.orange)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        ScrollView {
-                            Text(selected?.text.isEmpty == true ? AppFlavor.text("等待结果…", "Waiting for result...") : (selected?.text ?? ""))
-                                .font(.system(size: resultFontSize))
-                                .lineSpacing(2)
-                                .foregroundStyle(selected?.text.isEmpty == true ? .secondary : .primary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                        }
-                        .frame(height: 190)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(9)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+                .frame(height: ActionCompareLayout.viewportHeight(for: results, panelWidth: model.contentWidth))
 
                 compareControls(text: compareCombinedText(results), archived: archived)
             }
@@ -525,25 +564,49 @@ struct ActionPanelView: View {
         )
     }
 
-    private func compareSelectionBinding(_ results: [CompareModelResult]) -> Binding<String> {
-        Binding(
-            get: {
-                if let selected = model.selectedCompareID,
-                   results.contains(where: { $0.id == selected }) {
-                    return selected
+    private func compareResultCard(_ result: CompareModelResult) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                Text(result.label)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(result.model)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                if result.isLoading {
+                    ProgressView().controlSize(.small)
+                } else if result.error != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.orange)
                 }
-                return results.first?.id ?? ""
-            },
-            set: { model.selectedCompareID = $0 }
-        )
-    }
+            }
 
-    private func selectedCompareResult(in results: [CompareModelResult]) -> CompareModelResult? {
-        if let selected = model.selectedCompareID,
-           let result = results.first(where: { $0.id == selected }) {
-            return result
+            if let error = result.error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(result.text.isEmpty ? AppFlavor.text("等待结果…", "Waiting for result...") : result.text)
+                    .font(.system(size: resultFontSize))
+                    .lineSpacing(2)
+                    .foregroundStyle(result.text.isEmpty ? .secondary : .primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        return results.first
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.primary.opacity(0.055), lineWidth: 0.5)
+        }
     }
 
     private func compareCombinedText(_ results: [CompareModelResult]) -> String {

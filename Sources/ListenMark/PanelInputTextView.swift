@@ -91,7 +91,11 @@ struct PanelInputTextView: NSViewRepresentable {
                     }
                     return
                 }
-                window.makeKeyAndOrderFront(nil)
+                if let panel = window as? ActionPanel {
+                    panel.requestKeyboardFocus()
+                } else {
+                    window.makeKeyAndOrderFront(nil)
+                }
                 window.makeFirstResponder(textView)
             }
         }

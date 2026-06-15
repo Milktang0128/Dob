@@ -34,10 +34,9 @@ struct ServicesView: View {
         }
     }
 
-    private enum Selection: String {
+    private enum Selection: Hashable {
         case defaultModel
-        case compare1
-        case compare2
+        case llmProvider(String)
         case systemOCR
         case localSpeech
         case volcanoSpeech
@@ -48,20 +47,11 @@ struct ServicesView: View {
 
     @State private var category: Category = .text
     @State private var selection: Selection = .defaultModel
+    @State private var llmProviders: [LLMServiceProvider] = Settings.llmServiceProviders
 
     @AppStorage("llmBaseURL") private var llmBaseURL = Settings.recommendedLLMBaseURL
     @AppStorage("deepseekKey") private var llmAPIKey = ""
     @AppStorage("deepseekModel") private var llmModel = Settings.recommendedLLMModel
-    @AppStorage("compareProvider1Enabled") private var compareProvider1Enabled = false
-    @AppStorage("compareProvider1Label") private var compareProvider1Label = AppFlavor.text("备选 A", "Alt A")
-    @AppStorage("compareProvider1BaseURL") private var compareProvider1BaseURL = Settings.recommendedLLMBaseURL
-    @AppStorage("compareProvider1APIKey") private var compareProvider1APIKey = ""
-    @AppStorage("compareProvider1Model") private var compareProvider1Model = ""
-    @AppStorage("compareProvider2Enabled") private var compareProvider2Enabled = false
-    @AppStorage("compareProvider2Label") private var compareProvider2Label = AppFlavor.text("备选 B", "Alt B")
-    @AppStorage("compareProvider2BaseURL") private var compareProvider2BaseURL = Settings.recommendedLLMBaseURL
-    @AppStorage("compareProvider2APIKey") private var compareProvider2APIKey = ""
-    @AppStorage("compareProvider2Model") private var compareProvider2Model = ""
 
     @AppStorage("ocrAutoRunLastAction") private var ocrAutoRunLastAction = true
     @AppStorage("ocrHkDisplay") private var ocrHkDisplay = "⌃⇧O"
@@ -88,7 +78,7 @@ struct ServicesView: View {
     @AppStorage("rate") private var rate = Double(AVSpeechUtteranceDefaultSpeechRate)
 
     private var compareCount: Int {
-        (compareProvider1Enabled ? 1 : 0) + (compareProvider2Enabled ? 1 : 0)
+        llmProviders.filter { $0.enabled && $0.compareEnabled }.count
     }
 
     private var volcanoConfigured: Bool {
@@ -128,6 +118,9 @@ struct ServicesView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 600)
+        .onAppear {
+            llmProviders = Settings.llmServiceProviders
+        }
         .onChange(of: category) { _, newValue in
             selection = defaultSelection(for: newValue)
         }
@@ -170,31 +163,40 @@ struct ServicesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 switch category {
-                case .text:
-                    row(title: AppFlavor.text("默认模型", "Default Model"),
-                        subtitle: llmModel.isEmpty ? Settings.recommendedLLMModel : llmModel,
-                        icon: "sparkles",
-                        badge: llmAPIKey.isEmpty ? AppFlavor.text("未配置", "Missing Key") : AppFlavor.text("启用", "Enabled"),
-                        selected: selection == .defaultModel) {
-                        selection = .defaultModel
-                    }
-                    row(title: compareProvider1Label,
-                        subtitle: compareProvider1Model.isEmpty ? AppFlavor.text("未填写模型名", "Model is missing") : compareProvider1Model,
-                        icon: "rectangle.2.swap",
-                        badge: compareProvider1Enabled ? AppFlavor.text("比较", "Compare") : AppFlavor.text("关闭", "Off"),
-                        enabled: $compareProvider1Enabled,
-                        selected: selection == .compare1) {
-                        selection = .compare1
-                    }
-                    row(title: compareProvider2Label,
-                        subtitle: compareProvider2Model.isEmpty ? AppFlavor.text("未填写模型名", "Model is missing") : compareProvider2Model,
-                        icon: "rectangle.2.swap",
-                        badge: compareProvider2Enabled ? AppFlavor.text("比较", "Compare") : AppFlavor.text("关闭", "Off"),
-                        enabled: $compareProvider2Enabled,
-                        selected: selection == .compare2) {
-                        selection = .compare2
-                    }
-                case .recognition:
+	                case .text:
+	                    row(title: AppFlavor.text("默认模型", "Default Model"),
+	                        subtitle: llmModel.isEmpty ? Settings.recommendedLLMModel : llmModel,
+	                        icon: "sparkles",
+	                        badge: llmAPIKey.isEmpty ? AppFlavor.text("未配置", "Missing Key") : AppFlavor.text("启用", "Enabled"),
+	                        selected: selection == .defaultModel) {
+	                        selection = .defaultModel
+	                    }
+                        ForEach(llmProviders) { provider in
+                            row(title: provider.label,
+                                subtitle: provider.model.isEmpty ? AppFlavor.text("未填写模型名", "Model is missing") : provider.model,
+                                icon: "rectangle.2.swap",
+                                badge: provider.compareEnabled ? AppFlavor.text("比较", "Compare") : providerStatus(provider),
+                                enabled: compareBinding(for: provider.id),
+                                selected: selection == .llmProvider(provider.id)) {
+                                selection = .llmProvider(provider.id)
+                            }
+                        }
+                        HStack(spacing: 8) {
+                            Button {
+                                addLLMProvider()
+                            } label: {
+                                Label(AppFlavor.text("新增服务", "Add Service"), systemImage: "plus")
+                            }
+                            Button {
+                                deleteSelectedLLMProvider()
+                            } label: {
+                                Label(AppFlavor.text("删除", "Delete"), systemImage: "minus")
+                            }
+                            .disabled(selectedLLMProviderID == nil)
+                        }
+                        .controlSize(.small)
+                        .padding(.top, 4)
+	                case .recognition:
                     row(title: AppFlavor.text("系统 OCR", "System OCR"),
                         subtitle: AppFlavor.text("Apple Vision，本地识别", "Apple Vision, local"),
                         icon: "viewfinder",
@@ -214,6 +216,7 @@ struct ServicesView: View {
                         subtitle: volcVoice,
                         icon: "waveform",
                         badge: speechBadge(engine: "volcano", configured: volcanoConfigured),
+                        recommended: true,
                         selected: selection == .volcanoSpeech) {
                         selection = .volcanoSpeech
                     }
@@ -249,24 +252,12 @@ struct ServicesView: View {
     private var detail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                switch selection {
-                case .defaultModel:
-                    defaultModelDetail
-                case .compare1:
-                    compareModelDetail(title: AppFlavor.text("备选比较模型 A", "Alternate Compare Model A"),
-                                       enabled: $compareProvider1Enabled,
-                                       label: $compareProvider1Label,
-                                       baseURL: $compareProvider1BaseURL,
-                                       apiKey: $compareProvider1APIKey,
-                                       model: $compareProvider1Model)
-                case .compare2:
-                    compareModelDetail(title: AppFlavor.text("备选比较模型 B", "Alternate Compare Model B"),
-                                       enabled: $compareProvider2Enabled,
-                                       label: $compareProvider2Label,
-                                       baseURL: $compareProvider2BaseURL,
-                                       apiKey: $compareProvider2APIKey,
-                                       model: $compareProvider2Model)
-                case .systemOCR:
+	                switch selection {
+	                case .defaultModel:
+	                    defaultModelDetail
+                    case .llmProvider(let id):
+                        llmProviderDetail(id: id)
+	                case .systemOCR:
                     ocrDetail
                 case .localSpeech:
                     localSpeechDetail
@@ -318,34 +309,58 @@ struct ServicesView: View {
         }
     }
 
-    private func compareModelDetail(title: String,
-                                    enabled: Binding<Bool>,
-                                    label: Binding<String>,
-                                    baseURL: Binding<String>,
-                                    apiKey: Binding<String>,
-                                    model: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            detailHeader(title: title,
-                         subtitle: AppFlavor.text("比较时会和默认模型并行调用。最多启用两个备选服务，总计最多三个结果。",
-                                                  "Compare calls this alongside the default model. Up to two alternates are supported for three total results."),
-                         icon: "rectangle.2.swap",
-                         status: enabled.wrappedValue ? AppFlavor.text("已启用", "Enabled") : AppFlavor.text("已关闭", "Off"))
-            presetGrid { preset in
-                label.wrappedValue = preset.name
-                baseURL.wrappedValue = preset.baseURL
-                model.wrappedValue = preset.model
-                enabled.wrappedValue = true
+    @ViewBuilder private func llmProviderDetail(id: String) -> some View {
+        if let provider = llmProviders.first(where: { $0.id == id }) {
+            VStack(alignment: .leading, spacing: 18) {
+                detailHeader(title: provider.label.isEmpty ? AppFlavor.text("未命名服务", "Unnamed Service") : provider.label,
+                             subtitle: AppFlavor.text("OpenAI Chat Completions 兼容服务。可以被单个技能指定，也可以加入比较池。",
+                                                      "OpenAI Chat Completions-compatible service. Actions can use it directly, and it can join the compare pool."),
+                             icon: "rectangle.2.swap",
+                             status: providerStatus(provider))
+                presetGrid { preset in
+                    updateLLMProvider(id) {
+                        $0.label = preset.name
+                        $0.baseURL = preset.baseURL
+                        $0.model = preset.model
+                        $0.presetID = preset.id
+                        $0.enabled = true
+                    }
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(AppFlavor.text("启用此服务", "Enable this service"), isOn: providerBoolBinding(id: id, keyPath: \.enabled))
+                        .toggleStyle(.switch)
+                    Toggle(AppFlavor.text("参与比较", "Use for Compare"), isOn: providerBoolBinding(id: id, keyPath: \.compareEnabled))
+                        .toggleStyle(.switch)
+                        .disabled(!provider.enabled)
+                    helperText(AppFlavor.text("比较运行时会使用当前技能的主服务，再从已开启比较的服务里取最多两个备选。",
+                                              "Compare uses the action's primary service plus up to two compare-enabled alternates."))
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.035)))
+                serviceFields {
+                    TextField(AppFlavor.text("显示名称", "Display name"), text: providerStringBinding(id: id, keyPath: \.label))
+                    TextField(AppFlavor.text("Base URL", "Base URL"), text: providerStringBinding(id: id, keyPath: \.baseURL))
+                    SecureField(AppFlavor.text("API Key（Bearer Token）", "API Key (Bearer token)"), text: providerStringBinding(id: id, keyPath: \.apiKey))
+                    TextField(AppFlavor.text("模型名", "Model"), text: providerStringBinding(id: id, keyPath: \.model))
+                }
+                HStack {
+                    if let preset = LLMServicePresets.all.first(where: { $0.id == provider.presetID }), let url = preset.keyURL {
+                        Link(AppFlavor.text("获取 API Key ↗", "Get API Key ↗"), destination: url)
+                            .font(.caption)
+                    }
+                    Spacer()
+                    Button(AppFlavor.text("设为默认", "Set as Default")) {
+                        setProviderAsDefault(provider)
+                    }
+                    .disabled(!provider.isConfigured)
+                }
+                helperText(AppFlavor.text("设为默认会把此服务写入默认模型配置；原默认配置不会自动变成一个额外服务。",
+                                          "Setting as default writes this service into the default model config; the previous default is not automatically duplicated."))
             }
-            Toggle(AppFlavor.text("启用此比较服务", "Enable this compare service"), isOn: enabled)
-                .toggleStyle(.switch)
-            serviceFields {
-                TextField(AppFlavor.text("显示名称", "Display name"), text: label)
-                TextField(AppFlavor.text("Base URL", "Base URL"), text: baseURL)
-                SecureField(AppFlavor.text("API Key（Bearer Token）", "API Key (Bearer token)"), text: apiKey)
-                TextField(AppFlavor.text("模型名", "Model"), text: model)
-            }
-            helperText(AppFlavor.text("比较模型不会继承默认模型的 API Key。这样可以清楚地区分不同供应商、费用和隐私边界。",
-                                      "Compare models do not inherit the default API key, keeping provider, cost, and privacy boundaries explicit."))
+        } else {
+            ContentUnavailableView(AppFlavor.text("服务不存在", "Service Not Found"),
+                                   systemImage: "rectangle.2.swap",
+                                   description: Text(AppFlavor.text("这个服务可能已被删除。", "This service may have been deleted.")))
         }
     }
 
@@ -584,6 +599,7 @@ struct ServicesView: View {
                      icon: String,
                      badge: String,
                      enabled: Binding<Bool>? = nil,
+                     recommended: Bool = false,
                      selected: Bool,
                      action: @escaping () -> Void) -> some View {
         HStack(spacing: 10) {
@@ -594,15 +610,29 @@ struct ServicesView: View {
                         .foregroundStyle(selected ? Color.accentColor : Color.secondary)
                         .frame(width: 24)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
+                        HStack(spacing: 5) {
+                            Text(title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            if recommended {
+                                Text(AppFlavor.text("推荐", "Recommended"))
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.accentColor.opacity(selected ? 0.20 : 0.12)))
+                                    .foregroundStyle(Color.accentColor)
+                                    .fixedSize(horizontal: true, vertical: true)
+                            }
+                        }
+                        .lineLimit(1)
                         Text(subtitle)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
+                    .layoutPriority(1)
                     Spacer()
                     Text(badge)
                         .font(.caption2.weight(.medium))
@@ -610,6 +640,7 @@ struct ServicesView: View {
                         .padding(.vertical, 2)
                         .background(Capsule().fill(selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.07)))
                         .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                        .fixedSize(horizontal: true, vertical: true)
                 }
                 .contentShape(Rectangle())
             }
@@ -737,6 +768,75 @@ struct ServicesView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var selectedLLMProviderID: String? {
+        if case .llmProvider(let id) = selection { return id }
+        return nil
+    }
+
+    private func providerStatus(_ provider: LLMServiceProvider) -> String {
+        if !provider.enabled { return AppFlavor.text("关闭", "Off") }
+        if provider.compareEnabled { return AppFlavor.text("比较", "Compare") }
+        return provider.isConfigured ? AppFlavor.text("已配置", "Configured") : AppFlavor.text("未配置", "Missing")
+    }
+
+    private func saveLLMProviders() {
+        Settings.llmServiceProviders = llmProviders
+    }
+
+    private func addLLMProvider() {
+        let provider = LLMServiceProvider(label: AppFlavor.text("新服务", "New Service"),
+                                          baseURL: Settings.recommendedLLMBaseURL,
+                                          model: Settings.recommendedLLMModel)
+        llmProviders.append(provider)
+        saveLLMProviders()
+        selection = .llmProvider(provider.id)
+    }
+
+    private func deleteSelectedLLMProvider() {
+        guard let id = selectedLLMProviderID else { return }
+        llmProviders.removeAll { $0.id == id }
+        Settings.clearActionProviderReferences(to: id)
+        saveLLMProviders()
+        selection = .defaultModel
+    }
+
+    private func updateLLMProvider(_ id: String, mutate: (inout LLMServiceProvider) -> Void) {
+        guard let index = llmProviders.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&llmProviders[index])
+        if !llmProviders[index].enabled {
+            llmProviders[index].compareEnabled = false
+        }
+        saveLLMProviders()
+    }
+
+    private func providerStringBinding(id: String, keyPath: WritableKeyPath<LLMServiceProvider, String>) -> Binding<String> {
+        Binding(
+            get: { llmProviders.first(where: { $0.id == id })?[keyPath: keyPath] ?? "" },
+            set: { value in updateLLMProvider(id) { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    private func providerBoolBinding(id: String, keyPath: WritableKeyPath<LLMServiceProvider, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { llmProviders.first(where: { $0.id == id })?[keyPath: keyPath] ?? false },
+            set: { value in updateLLMProvider(id) { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    private func compareBinding(for id: String) -> Binding<Bool> {
+        providerBoolBinding(id: id, keyPath: \.compareEnabled)
+    }
+
+    private func setProviderAsDefault(_ provider: LLMServiceProvider) {
+        llmBaseURL = provider.baseURL
+        llmAPIKey = provider.apiKey
+        llmModel = provider.model
+        llmProviders.removeAll { $0.id == provider.id }
+        Settings.clearActionProviderReferences(to: provider.id)
+        saveLLMProviders()
+        selection = .defaultModel
     }
 
     private func speechBadge(engine: String, configured: Bool) -> String {

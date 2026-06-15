@@ -106,6 +106,9 @@ final class ArchiveStore: ObservableObject {
         var md = "# \(AppFlavor.text("过耳不忘 · 档案", "ListenMark Archive"))\n\n"
         for e in entries {
             md += "## \(e.action) · \(df.string(from: e.date)) · \(e.sourceApp)\n\n"
+            if let source = e.sourceMetadata?.markdownBlock {
+                md += "\(source)\n\n"
+            }
             if e.contextUsed == true {
                 md += "_\(AppFlavor.text("已附带上下文", "Context included"))_\n\n"
             }

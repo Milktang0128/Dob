@@ -6,6 +6,9 @@ import Carbon.HIToolbox
 /// matching @AppStorage keys.
 enum Settings {
     private static let d = UserDefaults.standard
+    private static let disabledAutoPopAppsKey = "disabledAutoPopApps"
+    private static let llmServiceProvidersKey = "llmServiceProviders"
+    private static let actionLLMProviderOverridesKey = "actionLLMProviderOverrides"
 
     // MARK: Text actions — OpenAI-compatible chat completions
 
@@ -49,27 +52,114 @@ enum Settings {
     }
 
     static var compareProviders: [LLMProviderConfig] {
-        var providers = [defaultLLMProvider]
-        if compareProvider1Enabled {
-            providers.append(LLMProviderConfig(id: "compare1",
-                                               label: nonEmpty(compareProvider1Label, fallback: AppFlavor.text("备选 A", "Alt A")),
-                                               baseURL: nonEmpty(compareProvider1BaseURL, fallback: llmBaseURL),
-                                               apiKey: compareProvider1APIKey,
-                                               model: compareProvider1Model))
-        }
-        if compareProvider2Enabled {
-            providers.append(LLMProviderConfig(id: "compare2",
-                                               label: nonEmpty(compareProvider2Label, fallback: AppFlavor.text("备选 B", "Alt B")),
-                                               baseURL: nonEmpty(compareProvider2BaseURL, fallback: llmBaseURL),
-                                               apiKey: compareProvider2APIKey,
-                                               model: compareProvider2Model))
-        }
-        return Array(providers.prefix(3))
+        compareProviders(baseline: defaultLLMProvider)
     }
 
-    private static func nonEmpty(_ value: String, fallback: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? fallback : trimmed
+    static var llmServiceProviders: [LLMServiceProvider] {
+        get {
+            if let data = d.data(forKey: llmServiceProvidersKey),
+               let providers = try? JSONDecoder().decode([LLMServiceProvider].self, from: data) {
+                return providers
+            }
+            let migrated = legacyCompareProviders()
+            if !migrated.isEmpty {
+                let data = try? JSONEncoder().encode(migrated)
+                d.set(data, forKey: llmServiceProvidersKey)
+            }
+            return migrated
+        }
+        set {
+            let data = try? JSONEncoder().encode(newValue)
+            d.set(data, forKey: llmServiceProvidersKey)
+        }
+    }
+
+    static var enabledLLMServiceProviders: [LLMServiceProvider] {
+        llmServiceProviders.filter { $0.enabled }
+    }
+
+    static func llmProvider(id: String?) -> LLMProviderConfig {
+        guard let id, id != defaultLLMProvider.id,
+              let provider = llmServiceProviders.first(where: { $0.id == id && $0.enabled }) else {
+            return defaultLLMProvider
+        }
+        return provider.runtimeConfig
+    }
+
+    static func llmProvider(for action: ActionDef) -> LLMProviderConfig {
+        llmProvider(id: actionLLMProviderID(for: action.id))
+    }
+
+    static func compareProviders(baseline: LLMProviderConfig) -> [LLMProviderConfig] {
+        let alternates = llmServiceProviders
+            .filter { $0.enabled && $0.compareEnabled && $0.id != baseline.id }
+            .map { $0.runtimeConfig }
+        return [baseline] + Array(alternates.prefix(2))
+    }
+
+    static var llmProviderChoices: [LLMProviderConfig] {
+        [defaultLLMProvider] + enabledLLMServiceProviders.map { $0.runtimeConfig }
+    }
+
+    static var actionLLMProviderOverrides: [String: String] {
+        get { d.dictionary(forKey: actionLLMProviderOverridesKey) as? [String: String] ?? [:] }
+        set { d.set(newValue, forKey: actionLLMProviderOverridesKey) }
+    }
+
+    static func actionLLMProviderID(for actionID: String) -> String? {
+        actionLLMProviderOverrides[actionID]
+    }
+
+    static func setActionLLMProviderID(_ providerID: String?, for actionID: String) {
+        var overrides = actionLLMProviderOverrides
+        if let providerID, providerID != defaultLLMProvider.id {
+            overrides[actionID] = providerID
+        } else {
+            overrides.removeValue(forKey: actionID)
+        }
+        actionLLMProviderOverrides = overrides
+    }
+
+    static func clearActionProviderReferences(to providerID: String) {
+        let filtered = actionLLMProviderOverrides.filter { $0.value != providerID }
+        if filtered.count != actionLLMProviderOverrides.count {
+            actionLLMProviderOverrides = filtered
+        }
+    }
+
+    private static func legacyCompareProviders() -> [LLMServiceProvider] {
+        [legacyCompareProvider(slot: 1), legacyCompareProvider(slot: 2)].compactMap { $0 }
+    }
+
+    private static func legacyCompareProvider(slot: Int) -> LLMServiceProvider? {
+        let enabled: Bool
+        let label: String
+        let baseURL: String
+        let apiKey: String
+        let model: String
+        if slot == 1 {
+            enabled = compareProvider1Enabled
+            label = compareProvider1Label
+            baseURL = compareProvider1BaseURL
+            apiKey = compareProvider1APIKey
+            model = compareProvider1Model
+        } else {
+            enabled = compareProvider2Enabled
+            label = compareProvider2Label
+            baseURL = compareProvider2BaseURL
+            apiKey = compareProvider2APIKey
+            model = compareProvider2Model
+        }
+        let hasContent = [baseURL, apiKey, model]
+            .contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard enabled || hasContent else { return nil }
+        return LLMServiceProvider(id: "legacy-compare-\(slot)",
+                                  label: label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? AppFlavor.text("备选 \(slot)", "Alt \(slot)") : label,
+                                  baseURL: baseURL,
+                                  apiKey: apiKey,
+                                  model: model,
+                                  enabled: true,
+                                  compareEnabled: enabled)
     }
 
     static var deepseekKey: String {
@@ -326,6 +416,41 @@ enum Settings {
     static var autoPopCopyFallback: Bool {
         get { d.object(forKey: "autoPopCopyFallback") == nil ? true : d.bool(forKey: "autoPopCopyFallback") }
         set { d.set(newValue, forKey: "autoPopCopyFallback") }
+    }
+
+    static var autoDismissPanel: Bool {
+        get { d.object(forKey: "autoDismissPanel") == nil ? true : d.bool(forKey: "autoDismissPanel") }
+        set { d.set(newValue, forKey: "autoDismissPanel") }
+    }
+
+    static var disabledAutoPopApps: [String: String] {
+        get { d.dictionary(forKey: disabledAutoPopAppsKey) as? [String: String] ?? [:] }
+        set { d.set(newValue, forKey: disabledAutoPopAppsKey) }
+    }
+
+    static var disabledAutoPopAppsSorted: [(bundleID: String, name: String)] {
+        disabledAutoPopApps
+            .map { (bundleID: $0.key, name: $0.value) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    static func disableAutoPop(bundleID: String, appName: String) {
+        let id = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+        var apps = disabledAutoPopApps
+        apps[id] = appName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? id : appName
+        disabledAutoPopApps = apps
+    }
+
+    static func enableAutoPop(bundleID: String) {
+        var apps = disabledAutoPopApps
+        apps.removeValue(forKey: bundleID)
+        disabledAutoPopApps = apps
+    }
+
+    static func isAutoPopDisabled(bundleID: String?) -> Bool {
+        guard let bundleID, !bundleID.isEmpty else { return false }
+        return disabledAutoPopApps[bundleID] != nil
     }
 
     static var hotKeyCode: Int {

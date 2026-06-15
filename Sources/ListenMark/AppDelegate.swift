@@ -1,12 +1,18 @@
 import AppKit
 import SwiftUI
 import ApplicationServices
+import QuartzCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let panel = ActionPanel()
 
     private var outsideMonitor: Any?
+    private var panelMotionMonitor: Any?
+    private var panelDismissWorkItem: DispatchWorkItem?
+    private var panelDismissAnchor: NSPoint?
+    private var panelShownAt = Date.distantPast
+    private var panelIsFadingOut = false
     private var mouseUpMonitor: Any?
     private weak var triggerMenuItem: NSMenuItem?
     private var autoPopMouseDownLocation: NSPoint?
@@ -27,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var currentContext = ""
     private var currentContextSource: SelectionGrabber.ContextSource?
     private var currentSource = ""
+    private var currentSourceMetadata: SourceMetadata?
     private var currentResult = ""
     private var currentAction: ActionDef?
     private var currentContextUsed = false
@@ -125,6 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Speaker.shared.stop()
             }
         }
+        m.onDisableForCurrentApp = { [weak self] in self?.disableAutoPopForCurrentApp() }
+        m.onDisableGlobally = { [weak self] in self?.disableAutoPopGlobally() }
         m.onClose = { [weak self] in self?.closePanel() }
         m.onOpenArchive = { [weak self] in self?.openArchive() }
         m.onOpenSettings = { [weak self] in self?.openSettings() }
@@ -208,6 +217,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.handleAutoPopMouseEvent(event)
             }
         }
+        if panel.isVisible {
+            refreshOutsideMonitor()
+        }
     }
 
     private func registerActionHotKeys() {
@@ -227,6 +239,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func handleAutoPopMouseEvent(_ event: NSEvent) {
+        guard !isFrontmostAppAutoPopDisabled() else {
+            autoPopMouseDownLocation = nil
+            autoPopDidDrag = false
+            clearAutoSelectionState()
+            return
+        }
         switch event.type {
         case .leftMouseDown:
             autoPopMouseDownLocation = event.locationInWindow
@@ -293,7 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard clean != lastAutoText else { return }
         cancelActiveAction()
         lastAutoText = clean
-        currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? AppFlavor.text("未知来源", "Unknown Source")
+        captureCurrentSource(contextSource: contextSource)
         currentText = clean
         currentContext = ""
         currentContextSource = contextSource
@@ -307,7 +325,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lastAutoText = ""
         currentContext = ""
         currentContextSource = nil
+        currentSourceMetadata = nil
         currentContextUsed = false
+    }
+
+    private func captureCurrentSource(contextSource: SelectionGrabber.ContextSource?,
+                                      fallbackName: String? = nil,
+                                      allowBrowserScripting: Bool = false) {
+        let metadata = SourceMetadataCollector.current(contextSource: contextSource,
+                                                       fallbackName: fallbackName ?? currentSource,
+                                                       allowBrowserScripting: allowBrowserScripting)
+        currentSourceMetadata = metadata
+        currentSource = metadata.appName
+    }
+
+    private func setManualSource(_ name: String) {
+        currentSource = name
+        currentSourceMetadata = SourceMetadata(appName: name)
+    }
+
+    private func refreshCurrentSourceForAction() {
+        guard currentSource != AppFlavor.text("输入文本", "Input Text") else { return }
+        guard currentContextSource != nil else { return }
+        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier != AppFlavor.bundleIdentifier else { return }
+        captureCurrentSource(contextSource: currentContextSource,
+                             fallbackName: currentSource,
+                             allowBrowserScripting: true)
     }
 
     private func canRunAutoCopyFallback() -> Bool {
@@ -393,7 +436,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func triggerScreenOCR(silent: Bool) {
         cancelActiveAction()
         let generation = actionGeneration
-        currentSource = silent ? AppFlavor.text("静默 OCR", "Silent OCR") : AppFlavor.text("屏幕 OCR", "Screen OCR")
+        captureCurrentSource(contextSource: SelectionGrabber.contextSource(),
+                             fallbackName: AppFlavor.text("屏幕内容", "Screen Content"))
         ScreenOCR.shared.start { [weak self] text in
             guard let self else { return }
             guard self.actionGeneration == generation else { return }
@@ -440,7 +484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func triggerInputPanel() {
         cancelActiveAction()
-        currentSource = AppFlavor.text("输入文本", "Input Text")
+        setManualSource(AppFlavor.text("输入文本", "Input Text"))
         currentText = ""
         currentContext = ""
         currentContextSource = nil
@@ -449,15 +493,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentAction = nil
         pendingEntry = nil
         panel.model.inputText = ""
-        showPanel(minWidth: 500)
+        showPanel(minWidth: 500, allowsKeyboardFocus: true)
         panel.model.phase = .input
     }
 
     private func triggerSelection(actionID: String?) {
         cancelActiveAction()
         let generation = actionGeneration
-        currentSource = NSWorkspace.shared.frontmostApplication?.localizedName ?? AppFlavor.text("未知来源", "Unknown Source")
         let contextSource = SelectionGrabber.contextSource()
+        captureCurrentSource(contextSource: contextSource)
         SelectionGrabber.grabAsync { [weak self] text in
             guard let self else { return }
             guard self.actionGeneration == generation else { return }
@@ -494,15 +538,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Panel lifecycle
 
-    private func showPanel(minWidth: CGFloat = 320) {
-        panel.showNearMouse(minWidth: minWidth)
+    private func showPanel(minWidth: CGFloat = 320, allowsKeyboardFocus: Bool = false) {
+        panelIsFadingOut = false
+        panel.showNearMouse(minWidth: minWidth, allowsKeyboardFocus: allowsKeyboardFocus)
         panel.model.canCompare = false
         panel.model.selectedCompareID = nil
+        panel.model.disableAppName = currentDisableCandidate()?.appName
+        panelShownAt = Date()
+        panelDismissAnchor = NSEvent.mouseLocation
         refreshOutsideMonitor()
     }
 
     private func removeOutsideMonitor() {
         if let m = outsideMonitor { NSEvent.removeMonitor(m); outsideMonitor = nil }
+        if let m = panelMotionMonitor { NSEvent.removeMonitor(m); panelMotionMonitor = nil }
+        cancelPanelAutoDismiss()
     }
 
     private func refreshOutsideMonitor() {
@@ -511,6 +561,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self, !self.panel.model.pinned else { return }
             self.closePanel()
+        }
+        if Settings.autoDismissPanel {
+            panelMotionMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]) { [weak self] _ in
+                self?.handlePanelPointerMotion()
+            }
         }
     }
 
@@ -522,8 +577,122 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func closePanel() {
         removeOutsideMonitor()
         cancelActiveAction()
+        panelIsFadingOut = false
         panel.model.pinned = false
+        panel.releaseKeyboardFocus()
         panel.orderOut(nil)
+        panel.alphaValue = 1
+    }
+
+    private func handlePanelPointerMotion() {
+        guard Settings.autoDismissPanel,
+              panel.isVisible,
+              panelCanAutoDismissForCurrentPhase,
+              !panel.model.pinned,
+              !panelIsFadingOut else { return }
+
+        let point = NSEvent.mouseLocation
+        if panelSafeFrame.contains(point) {
+            panelDismissAnchor = point
+            cancelPanelAutoDismiss()
+            return
+        }
+
+        if Date().timeIntervalSince(panelShownAt) < 0.25 {
+            return
+        }
+
+        let anchor = panelDismissAnchor ?? point
+        panelDismissAnchor = anchor
+        guard distance(from: anchor, to: point) > 88 else {
+            cancelPanelAutoDismiss()
+            return
+        }
+
+        schedulePanelAutoDismiss()
+    }
+
+    private var panelSafeFrame: NSRect {
+        panel.frame.insetBy(dx: -14, dy: -14)
+    }
+
+    private func schedulePanelAutoDismiss() {
+        guard panelDismissWorkItem == nil else { return }
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.panelDismissWorkItem = nil
+            guard self.isPanelAutoDismissStillValid else { return }
+            guard !self.panelSafeFrame.contains(NSEvent.mouseLocation) else {
+                self.panelDismissAnchor = NSEvent.mouseLocation
+                return
+            }
+            self.fadeOutPanel()
+        }
+        panelDismissWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: item)
+    }
+
+    private var isPanelAutoDismissStillValid: Bool {
+        Settings.autoDismissPanel && panel.isVisible && panelCanAutoDismissForCurrentPhase && !panel.model.pinned && !panelIsFadingOut
+    }
+
+    private var panelCanAutoDismissForCurrentPhase: Bool {
+        switch panel.model.phase {
+        case .idle, .captureNotice:
+            return true
+        case .input, .loading, .error, .compare, .result:
+            return false
+        }
+    }
+
+    private func cancelPanelAutoDismiss() {
+        panelDismissWorkItem?.cancel()
+        panelDismissWorkItem = nil
+    }
+
+    private func fadeOutPanel() {
+        guard isPanelAutoDismissStillValid else { return }
+        panelIsFadingOut = true
+        removeOutsideMonitor()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            guard let self else { return }
+            self.cancelActiveAction()
+            self.panel.model.pinned = false
+            self.panel.releaseKeyboardFocus()
+            self.panel.orderOut(nil)
+            self.panel.alphaValue = 1
+            self.panelIsFadingOut = false
+        }
+    }
+
+    private func isFrontmostAppAutoPopDisabled() -> Bool {
+        guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+              bundleID != AppFlavor.bundleIdentifier else { return false }
+        return Settings.isAutoPopDisabled(bundleID: bundleID)
+    }
+
+    private func currentDisableCandidate() -> (bundleID: String, appName: String)? {
+        guard let metadata = currentSourceMetadata,
+              let bundleID = metadata.bundleIdentifier,
+              !bundleID.isEmpty,
+              bundleID != AppFlavor.bundleIdentifier else { return nil }
+        return (bundleID, metadata.appName)
+    }
+
+    private func disableAutoPopForCurrentApp() {
+        guard let candidate = currentDisableCandidate() else { return }
+        Settings.disableAutoPop(bundleID: candidate.bundleID, appName: candidate.appName)
+        closePanel()
+    }
+
+    private func disableAutoPopGlobally() {
+        Settings.autoPop = false
+        applyConfig()
+        closePanel()
     }
 
     private func cancelActiveAction() {
@@ -560,36 +729,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func perform(_ action: ActionDef, remember: Bool = true) {
         syncInputTextFromPanel()
+        refreshCurrentSourceForAction()
         let text = currentText
         guard !text.isEmpty else { return }
+        if remember {
+            Settings.lastActionID = action.id
+        }
+
+        let provider = Settings.llmProvider(for: action)
+        if action.needsLLM && provider.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            panel.model.phase = .error(AppFlavor.text("「\(action.name)」需要 API Key，请到「设置」填写 OpenAI 兼容接口配置", "\(action.name) needs an API key. Add your OpenAI-compatible API settings in Settings."))
+            return
+        }
+        if action.needsLLM &&
+            (provider.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+             provider.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+            panel.model.phase = .error(AppFlavor.text("「\(action.name)」的模型服务未配置完整，请到「设置」检查 Base URL 和模型名", "\(action.name)'s model service is incomplete. Check Base URL and model in Settings."))
+            return
+        }
+
         cancelActiveAction()
         let generation = actionGeneration
         panel.model.active = action.id
         panel.model.canCompare = false
         panel.model.selectedCompareID = nil
-        if remember {
-            Settings.lastActionID = action.id
-        }
-
-        if action.needsLLM && Settings.llmAPIKey.isEmpty {
-            panel.model.phase = .error(AppFlavor.text("「\(action.name)」需要 API Key，请到「设置」填写 OpenAI 兼容接口配置", "\(action.name) needs an API key. Add your OpenAI-compatible API settings in Settings."))
-            return
-        }
 
         if !action.needsLLM {
             currentContextUsed = false
             Speaker.shared.speak(text)
             finishResult(action: action, source: currentSource, original: text, response: nil,
-                         spoken: text, contextUsed: false)
+                         spoken: text, contextUsed: false, sourceMetadata: currentSourceMetadata)
             return
         }
 
         panel.model.phase = .loading(action.name)
         let source = currentSource
+        let sourceMetadata = currentSourceMetadata
         streamTask = Task { [weak self] in
             guard let self else { return }
             let context = self.contextText(for: text)
-            let request = self.requestPayload(for: action, selectedText: text, context: context)
+            let request = self.requestPayload(for: action, selectedText: text,
+                                              context: context, sourceMetadata: sourceMetadata)
             let shouldContinue = await MainActor.run {
                 guard self.actionGeneration == generation else { return false }
                 self.currentContext = context
@@ -600,7 +780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
             var full = ""
             do {
-                for try await delta in LLMClient.stream(prompt: request.prompt, text: request.text) {
+                for try await delta in LLMClient.stream(prompt: request.prompt, text: request.text, provider: provider) {
                     full += delta
                     let snapshot = full
                     await MainActor.run {
@@ -619,7 +799,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         Speaker.shared.speak(finalText)
                     }
                     self.finishResult(action: action, source: source, original: text, response: finalText,
-                                      spoken: finalText, contextUsed: request.contextUsed)
+                                      spoken: finalText, contextUsed: request.contextUsed,
+                                      sourceMetadata: sourceMetadata)
                 }
             } catch is CancellationError {
                 let finalText = full
@@ -630,7 +811,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     } else {
                         // User stopped mid-stream: keep the partial text, don't speak.
                         self.finishResult(action: action, source: source, original: text, response: finalText,
-                                          spoken: finalText, contextUsed: request.contextUsed)
+                                          spoken: finalText, contextUsed: request.contextUsed,
+                                          sourceMetadata: sourceMetadata)
                     }
                 }
             } catch {
@@ -644,9 +826,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func startCompare() {
         syncInputTextFromPanel()
+        refreshCurrentSourceForAction()
         let text = currentText
         guard let action = currentAction, action.needsLLM, !text.isEmpty else { return }
-        let providers = Settings.compareProviders
+        let baseline = Settings.llmProvider(for: action)
+        let providers = Settings.compareProviders(baseline: baseline)
         guard providers.count >= 2 else {
             panel.model.phase = .error(AppFlavor.text("请先在设置里启用至少一个备选比较模型", "Enable at least one alternate comparison model in Settings first."))
             return
@@ -655,8 +839,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cancelActiveAction()
         let generation = actionGeneration
         let source = currentSource
+        let sourceMetadata = currentSourceMetadata
         let context = contextText(for: text)
-        let request = requestPayload(for: action, selectedText: text, context: context)
+        let request = requestPayload(for: action, selectedText: text,
+                                     context: context, sourceMetadata: sourceMetadata)
         currentContext = context
         currentContextUsed = request.contextUsed
         currentAction = action
@@ -703,7 +889,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             await MainActor.run {
                 guard self.actionGeneration == generation, !Task.isCancelled else { return }
                 self.finishCompareResult(action: action, source: source, original: text,
-                                         results: finalResults, contextUsed: request.contextUsed)
+                                         results: finalResults, contextUsed: request.contextUsed,
+                                         sourceMetadata: sourceMetadata)
             }
         }
     }
@@ -731,7 +918,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func finishCompareResult(action: ActionDef, source: String, original: String,
-                                     results: [CompareModelResult], contextUsed: Bool) {
+                                     results: [CompareModelResult], contextUsed: Bool,
+                                     sourceMetadata: SourceMetadata?) {
         let combined = formatCompareResults(results)
         let comparison = comparisonRecord(from: results)
         currentResult = combined
@@ -742,6 +930,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let entry = Entry(action: AppFlavor.text("比较 · \(action.name)", "Compare · \(action.name)"),
                           icon: "rectangle.split.3x1",
                           sourceApp: source,
+                          sourceMetadata: sourceMetadata,
                           original: original,
                           response: combined,
                           responseModel: comparison.selectedID,
@@ -764,12 +953,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func finishResult(action: ActionDef, source: String, original: String, response: String?,
-                              spoken: String, contextUsed: Bool) {
+                              spoken: String, contextUsed: Bool, sourceMetadata: SourceMetadata?) {
         currentResult = spoken
         currentAction = action
         currentContextUsed = contextUsed
         panel.model.canCompare = action.needsLLM
         let entry = Entry(action: action.name, icon: action.icon, sourceApp: source,
+                          sourceMetadata: sourceMetadata,
                           original: original, response: response, contextUsed: contextUsed,
                           contextExcerpt: contextUsed ? contextExcerpt(from: currentContext, selectedText: original) : nil)
         recordHistory(action: action.name, icon: action.icon, source: source,
@@ -786,33 +976,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                     contextUsed: contextUsed)
     }
 
-    private func requestPayload(for action: ActionDef, selectedText: String, context: String) -> (prompt: String, text: String, contextUsed: Bool) {
+    private func requestPayload(for action: ActionDef, selectedText: String,
+                                context: String,
+                                sourceMetadata: SourceMetadata?) -> (prompt: String, text: String, contextUsed: Bool) {
         guard Settings.useFullContext else { return (action.prompt, selectedText, false) }
 
         let cleanContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanContext.isEmpty, cleanContext != selectedText else { return (action.prompt, selectedText, false) }
+        let sourceBlock = sourceMetadata?.modelContextBlock
+        let hasFullTextContext = !cleanContext.isEmpty && cleanContext != selectedText
+        guard hasFullTextContext || sourceBlock != nil else { return (action.prompt, selectedText, false) }
 
         let prompt = action.prompt + "\n\n" + AppFlavor.text(
-            "如果用户同时提供「全文上下文」，请只把它当作理解选中内容的上下文；回答仍然围绕「选中内容」执行当前技能，不要改为概括整篇全文，除非当前技能明确要求概括。",
-            "If the user provides full-text context, use it only as context for understanding the selected text. Keep the answer focused on the selected text and do not summarize the whole context unless the current action explicitly asks for that."
+            "如果用户同时提供「来源信息」或「全文上下文」，请只把它们当作理解选中内容的参考；回答仍然围绕「选中内容」执行当前技能，不要改为概括整篇全文，除非当前技能明确要求概括。",
+            "If the user provides source metadata or full-text context, use them only as reference for understanding the selected text. Keep the answer focused on the selected text and do not summarize the whole context unless the current action explicitly asks for that."
         )
+        var zhBlocks = ["选中内容：\n\(selectedText)"]
+        var enBlocks = ["Selected text:\n\(selectedText)"]
+        if let sourceBlock {
+            zhBlocks.append("来源信息：\n\(sourceBlock)")
+            enBlocks.append("Source metadata:\n\(sourceBlock)")
+        }
+        if hasFullTextContext {
+            zhBlocks.append("全文上下文：\n\(cleanContext)")
+            enBlocks.append("Full-text context:\n\(cleanContext)")
+        }
         let text = AppFlavor.text(
-            """
-            选中内容：
-            \(selectedText)
-
-            全文上下文：
-            \(cleanContext)
-            """,
-            """
-            Selected text:
-            \(selectedText)
-
-            Full-text context:
-            \(cleanContext)
-            """
+            zhBlocks.joined(separator: "\n\n"),
+            enBlocks.joined(separator: "\n\n")
         )
-        return (prompt, text, true)
+        return (prompt, text, hasFullTextContext)
     }
 
     private func contextText(for selectedText: String) -> String {
@@ -927,7 +1119,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func archiveOriginalCopy() {
+        refreshCurrentSourceForAction()
         let entry = Entry(action: AppFlavor.text("摘录", "Clip"), icon: "doc.on.doc", sourceApp: currentSource,
+                          sourceMetadata: currentSourceMetadata,
                           original: currentText, response: nil)
         ArchiveStore.shared.add(entry)
     }
@@ -989,15 +1183,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openSettings() {
-        showWindow(&settingsWindow, size: NSSize(width: 540, height: 660), title: AppFlavor.text("\(AppFlavor.appName) · 设置", "\(AppFlavor.appName) · Settings")) { SettingsView() }
+        openSettingsPage(.preferences)
     }
 
     @objc private func openServices() {
-        showWindow(&servicesWindow, size: NSSize(width: 880, height: 620), title: AppFlavor.text("\(AppFlavor.appName) · 服务管理", "\(AppFlavor.appName) · Services")) { ServicesView() }
+        openSettingsPage(.services)
     }
 
     @objc private func openActions() {
-        showWindow(&actionsWindow, size: NSSize(width: 520, height: 560), title: AppFlavor.text("\(AppFlavor.appName) · 编辑技能", "\(AppFlavor.appName) · Edit Actions")) { ActionsConfigView() }
+        openSettingsPage(.actions)
+    }
+
+    private func openSettingsPage(_ page: SettingsPage) {
+        let size = NSSize(width: 1100, height: 720)
+        if settingsWindow == nil {
+            let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                             styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                             backing: .buffered, defer: false)
+            w.title = AppFlavor.text("\(AppFlavor.appName) · 设置", "\(AppFlavor.appName) · Settings")
+            w.center()
+            w.isReleasedWhenClosed = false
+            w.contentMinSize = NSSize(width: 980, height: 680)
+            settingsWindow = w
+        }
+        settingsWindow?.contentViewController = NSHostingController(rootView: SettingsView(initialPage: page))
+        settingsWindow?.setContentSize(size)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func openReview() {

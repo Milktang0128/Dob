@@ -38,6 +38,7 @@ struct Entry: Identifiable, Codable {
     var action: String
     var icon: String?
     var sourceApp: String
+    var sourceMetadata: SourceMetadata? = nil
     var original: String
     var response: String?
     var responseModel: String? = nil
@@ -64,6 +65,73 @@ struct HistoryEntry: Identifiable, Codable {
     var comparison: ComparisonRecord? = nil
 }
 
+struct SourceMetadata: Codable, Equatable {
+    var appName: String
+    var bundleIdentifier: String?
+    var windowTitle: String?
+    var pageTitle: String?
+    var pageURL: String?
+
+    init(appName: String,
+         bundleIdentifier: String? = nil,
+         windowTitle: String? = nil,
+         pageTitle: String? = nil,
+         pageURL: String? = nil) {
+        self.appName = appName
+        self.bundleIdentifier = SourceMetadata.clean(bundleIdentifier)
+        self.windowTitle = SourceMetadata.clean(windowTitle)
+        self.pageTitle = SourceMetadata.clean(pageTitle)
+        self.pageURL = SourceMetadata.clean(pageURL)
+    }
+
+    var searchText: String {
+        [appName, windowTitle, pageTitle, pageURL]
+            .compactMap { $0 }
+            .joined(separator: "\n")
+    }
+
+    var compactSummary: String? {
+        if let pageTitle, !pageTitle.isEmpty { return pageTitle }
+        if let windowTitle, !windowTitle.isEmpty, windowTitle != appName { return windowTitle }
+        return nil
+    }
+
+    var modelContextBlock: String? {
+        var lines: [String] = []
+        lines.append(AppFlavor.text("应用：\(appName)", "App: \(appName)"))
+        if let pageTitle, !pageTitle.isEmpty {
+            lines.append(AppFlavor.text("网页标题：\(pageTitle)", "Page title: \(pageTitle)"))
+        } else if let windowTitle, !windowTitle.isEmpty, windowTitle != appName {
+            lines.append(AppFlavor.text("窗口标题：\(windowTitle)", "Window title: \(windowTitle)"))
+        }
+        if let pageURL, !pageURL.isEmpty {
+            lines.append(AppFlavor.text("网页链接：\(pageURL)", "Page URL: \(pageURL)"))
+        }
+        guard lines.count > 1 || bundleIdentifier != nil else { return nil }
+        return lines.joined(separator: "\n")
+    }
+
+    var markdownBlock: String? {
+        var lines: [String] = []
+        lines.append("**\(AppFlavor.text("来源", "Source"))**：\(appName.markdownInlineEscaped)")
+        if let pageTitle, !pageTitle.isEmpty {
+            lines.append("**\(AppFlavor.text("页面", "Page"))**：\(pageTitle.markdownInlineEscaped)")
+        } else if let windowTitle, !windowTitle.isEmpty, windowTitle != appName {
+            lines.append("**\(AppFlavor.text("窗口", "Window"))**：\(windowTitle.markdownInlineEscaped)")
+        }
+        if let pageURL, !pageURL.isEmpty {
+            lines.append("**\(AppFlavor.text("链接", "URL"))**：<\(pageURL)>")
+        }
+        guard lines.count > 1 else { return nil }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func clean(_ value: String?) -> String? {
+        let clean = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return clean.isEmpty ? nil : clean
+    }
+}
+
 struct LLMProviderConfig: Identifiable, Equatable {
     var id: String
     var label: String
@@ -71,6 +139,45 @@ struct LLMProviderConfig: Identifiable, Equatable {
     var apiKey: String
     var model: String
     var isDefault: Bool = false
+}
+
+struct LLMServiceProvider: Identifiable, Codable, Equatable {
+    var id: String
+    var label: String
+    var baseURL: String
+    var apiKey: String
+    var model: String
+    var enabled: Bool
+    var compareEnabled: Bool
+    var presetID: String?
+
+    init(id: String = UUID().uuidString,
+         label: String,
+         baseURL: String,
+         apiKey: String = "",
+         model: String,
+         enabled: Bool = true,
+         compareEnabled: Bool = false,
+         presetID: String? = nil) {
+        self.id = id
+        self.label = label
+        self.baseURL = baseURL
+        self.apiKey = apiKey
+        self.model = model
+        self.enabled = enabled
+        self.compareEnabled = compareEnabled
+        self.presetID = presetID
+    }
+
+    var isConfigured: Bool {
+        !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var runtimeConfig: LLMProviderConfig {
+        LLMProviderConfig(id: id, label: label, baseURL: baseURL, apiKey: apiKey, model: model)
+    }
 }
 
 struct CompareModelResult: Identifiable, Equatable {
@@ -130,6 +237,15 @@ extension String {
     var preview: String {
         let t = trimmingCharacters(in: .whitespacesAndNewlines)
         return t.count <= 24 ? t : String(t.prefix(24)) + "…"
+    }
+
+    var markdownInlineEscaped: String {
+        replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "`", with: "\\`")
+            .replacingOccurrences(of: "*", with: "\\*")
+            .replacingOccurrences(of: "_", with: "\\_")
+            .replacingOccurrences(of: "[", with: "\\[")
+            .replacingOccurrences(of: "]", with: "\\]")
     }
 }
 

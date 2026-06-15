@@ -33,12 +33,13 @@ struct ActionsConfigView: View {
             }
 
             Section {
-                Button {
-                    editing = EditTarget(
-                        def: ActionDef(id: "", name: AppFlavor.text("新技能", "New Action"), icon: "wand.and.stars",
-                                       enabled: true, isBuiltin: false, needsLLM: true,
-                                       prompt: AppFlavor.text("用简洁的简体中文，对下面的文本做……（在这里写你想要的处理方式）", "In concise natural English, process the selected text as follows...")),
-                        isNew: true)
+	                Button {
+                    let newID = UUID().uuidString
+	                    editing = EditTarget(
+	                        def: ActionDef(id: newID, name: AppFlavor.text("新技能", "New Action"), icon: "wand.and.stars",
+	                                       enabled: true, isBuiltin: false, needsLLM: true,
+	                                       prompt: AppFlavor.text("用简洁的简体中文，对下面的文本做……（在这里写你想要的处理方式）", "In concise natural English, process the selected text as follows...")),
+	                        isNew: true)
                 } label: {
                     Label(AppFlavor.text("新增自定义技能（\(store.customCount)/\(ActionStore.maxCustom)）", "Add Custom Action (\(store.customCount)/\(ActionStore.maxCustom))"), systemImage: "plus.circle.fill")
                 }
@@ -51,16 +52,19 @@ struct ActionsConfigView: View {
         }
         .listStyle(.inset)
         .frame(minWidth: 480, minHeight: 520)
-        .sheet(item: $editing) { target in
-            ActionEditor(target: target,
-                         onSave: { result in
-                             if target.isNew {
-                                 store.addCustom(result)
-                             } else {
-                                 store.update(result)
-                             }
-                             editing = nil
-                         },
+	        .sheet(item: $editing) { target in
+	            ActionEditor(target: target,
+                             initialProviderID: Settings.actionLLMProviderID(for: target.def.id) ?? Settings.defaultLLMProvider.id,
+	                         onSave: { result, providerID in
+	                             if target.isNew {
+	                                 store.addCustom(result)
+	                             } else {
+	                                 store.update(result)
+	                             }
+                                 Settings.setActionLLMProviderID(providerID == Settings.defaultLLMProvider.id ? nil : providerID,
+                                                                 for: result.id)
+	                             editing = nil
+	                         },
                          onCancel: { editing = nil })
         }
     }
@@ -80,6 +84,15 @@ struct ActionsConfigView: View {
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(Capsule().fill(Color.primary.opacity(0.08)))
                     .foregroundStyle(.tertiary)
+            }
+            if def.needsLLM {
+                Text(providerLabel(for: def))
+                    .font(.caption2)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
             Spacer()
             HotkeyRecorder(display: Binding(get: { def.hotKeyDisplay ?? AppFlavor.text("未设置", "Not Set") }, set: { _ in })) { code, mods, disp in
@@ -164,6 +177,14 @@ struct ActionsConfigView: View {
         if isDropTarget { return Color.accentColor.opacity(0.34) }
         return Color.primary.opacity(0.06)
     }
+
+    private func providerLabel(for def: ActionDef) -> String {
+        guard let id = Settings.actionLLMProviderID(for: def.id),
+              let provider = Settings.llmServiceProviders.first(where: { $0.id == id }) else {
+            return AppFlavor.text("默认模型", "Default")
+        }
+        return provider.label
+    }
 }
 
 private struct ActionDropDelegate: DropDelegate {
@@ -245,10 +266,21 @@ private struct ActionDragPreview: View {
 
 private struct ActionEditor: View {
     @State var target: ActionsConfigView.EditTarget
+    @State private var selectedProviderID: String
     @State private var optimizingPrompt = false
     @State private var optimizeError: String?
-    var onSave: (ActionDef) -> Void
+    var onSave: (ActionDef, String) -> Void
     var onCancel: () -> Void
+
+    init(target: ActionsConfigView.EditTarget,
+         initialProviderID: String,
+         onSave: @escaping (ActionDef, String) -> Void,
+         onCancel: @escaping () -> Void) {
+        _target = State(initialValue: target)
+        _selectedProviderID = State(initialValue: initialProviderID)
+        self.onSave = onSave
+        self.onCancel = onCancel
+    }
 
     private let icons = [
         "speaker.wave.2.fill", "lightbulb.fill", "globe", "list.bullet.rectangle.fill", "sparkles",
@@ -301,6 +333,21 @@ private struct ActionEditor: View {
 
             if target.def.needsLLM {
                 VStack(alignment: .leading, spacing: 4) {
+                    Text(AppFlavor.text("模型服务", "Model service")).font(.caption).foregroundStyle(.secondary)
+                    Picker("", selection: $selectedProviderID) {
+                        Text(AppFlavor.text("跟随默认", "Follow Default")).tag(Settings.defaultLLMProvider.id)
+                        ForEach(Settings.enabledLLMServiceProviders) { provider in
+                            Text(provider.label).tag(provider.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(AppFlavor.text("未指定时使用服务页里的默认模型。", "When unspecified, this action uses the default model from Services."))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(AppFlavor.text("生成提示词（告诉模型怎么处理选中的文本）", "Generation prompt (tell the model how to process the selected text)"))
                             .font(.caption).foregroundStyle(.secondary)
@@ -329,7 +376,7 @@ private struct ActionEditor: View {
             HStack {
                 Spacer()
                 Button(AppFlavor.text("取消", "Cancel")) { onCancel() }
-                Button(target.isNew ? AppFlavor.text("添加", "Add") : AppFlavor.text("保存", "Save")) { onSave(finalDef()) }
+                Button(target.isNew ? AppFlavor.text("添加", "Add") : AppFlavor.text("保存", "Save")) { onSave(finalDef(), selectedProviderID) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(target.def.name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -355,7 +402,8 @@ private struct ActionEditor: View {
         let name = target.def.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let current = target.def.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !current.isEmpty else { return }
-        guard !Settings.llmAPIKey.isEmpty else {
+        let provider = Settings.llmProvider(id: selectedProviderID)
+        guard !provider.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             optimizeError = AppFlavor.text("请先在设置里填写 AI 接口 API Key。", "Add your AI API key in Settings first.")
             return
         }
@@ -370,7 +418,8 @@ private struct ActionEditor: View {
 
                                                         \(AppFlavor.text("当前提示词", "Current prompt"))：
                                                         \(current)
-                                                        """)
+                                                        """,
+                                                        provider: provider)
             let cleaned = cleanOptimizedPrompt(optimized)
             guard !cleaned.isEmpty else {
                 optimizeError = AppFlavor.text("模型没有返回可用的提示词。", "The model did not return a usable prompt.")

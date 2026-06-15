@@ -14,6 +14,7 @@ final class ActionPanel: NSPanel {
     private let minPanelWidth: CGFloat = 320
     private let barHeight: CGFloat = 40
     private var currentWidth: CGFloat = 320
+    private var keyboardFocusAllowed = false
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 320, height: 40),
@@ -49,7 +50,26 @@ final class ActionPanel: NSPanel {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
     }
 
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { keyboardFocusAllowed }
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            requestKeyboardFocus()
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
+
+    func requestKeyboardFocus() {
+        keyboardFocusAllowed = true
+        makeKey()
+    }
+
+    func releaseKeyboardFocus() {
+        keyboardFocusAllowed = false
+    }
 
     private func height(for phase: PanelModel.Phase) -> CGFloat {
         switch phase {
@@ -58,7 +78,8 @@ final class ActionPanel: NSPanel {
         case .captureNotice: return barHeight + 58
         case .loading: return barHeight + 48
         case .error: return barHeight + 56
-        case .compare: return barHeight + 310
+        case .compare(_, _, let results, _, _):
+            return ActionCompareLayout.panelHeight(for: results, panelWidth: currentWidth, barHeight: barHeight)
         case .result(_, _, let text, _, _, let compact, _):
             return compact ? barHeight + 66 : ActionResultLayout.panelHeight(for: text, panelWidth: currentWidth, barHeight: barHeight)
         }
@@ -87,7 +108,7 @@ final class ActionPanel: NSPanel {
     private func width(for phase: PanelModel.Phase) -> CGFloat {
         switch phase {
         case .compare:
-            return max(currentWidth, 560)
+            return max(currentWidth, 640)
         default:
             return currentWidth
         }
@@ -115,9 +136,11 @@ final class ActionPanel: NSPanel {
         return max(minPanelWidth, ceil(w))
     }
 
-    func showNearMouse(minWidth: CGFloat = 320) {
+    func showNearMouse(minWidth: CGFloat = 320, allowsKeyboardFocus: Bool = false) {
+        alphaValue = 1
         model.phase = .idle
         model.active = nil
+        keyboardFocusAllowed = allowsKeyboardFocus
         currentWidth = max(computeWidth(), minWidth)
         model.contentWidth = currentWidth
         model.pinned = false
@@ -135,7 +158,9 @@ final class ActionPanel: NSPanel {
             if origin.y - maxExpansion < vf.minY { origin.y = mouse.y + 18 }
         }
         setFrameOrigin(origin)
-        makeKeyAndOrderFront(nil)
+        if allowsKeyboardFocus {
+            makeKeyAndOrderFront(nil)
+        }
         orderFrontRegardless()
     }
 
