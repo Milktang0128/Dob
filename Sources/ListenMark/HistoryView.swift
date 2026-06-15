@@ -86,6 +86,16 @@ private struct HistoryEntryCard: View {
         return f
     }()
 
+    private var responseText: String? {
+        guard let response = entry.response else { return nil }
+        let clean = LLMOutputSanitizer.visibleAnswer(from: response)
+        return clean.isEmpty ? nil : clean
+    }
+
+    private var playableText: String {
+        responseText ?? entry.original
+    }
+
     var body: some View {
         let tint = actionTint(entry.action)
         VStack(alignment: .leading, spacing: 8) {
@@ -117,14 +127,14 @@ private struct HistoryEntryCard: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                 Spacer()
-                Button { Speaker.shared.speak(entry.response ?? entry.original) } label: {
+                Button { Speaker.shared.speak(playableText) } label: {
                     Image(systemName: "play.circle")
                         .font(.system(size: 15))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(hover ? .primary : .secondary)
                 .help(AppFlavor.text("重听", "Replay"))
-                Button { copy(entry.response ?? entry.original) } label: {
+                Button { copy(playableText) } label: {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 13))
                 }
@@ -142,11 +152,11 @@ private struct HistoryEntryCard: View {
 
             Text(entry.original)
                 .font(.system(size: 13))
-                .foregroundStyle(entry.response == nil ? .primary : .secondary)
+                .foregroundStyle(responseText == nil ? .primary : .secondary)
                 .lineLimit(3)
                 .textSelection(.enabled)
 
-            if let response = entry.response, !response.isEmpty {
+            if let response = responseText {
                 Text(response)
                     .font(.system(size: 13))
                     .lineLimit(8)

@@ -112,18 +112,27 @@ final class ArchiveStore: ObservableObject {
             if e.contextUsed == true {
                 md += "_\(AppFlavor.text("已附带上下文", "Context included"))_\n\n"
             }
-            md += "> \(e.original.replacingOccurrences(of: "\n", with: "\n> "))\n\n"
+            let quotedOriginal = ArchiveMarkdownFormatter.quoteBlock(e.original)
+            if !quotedOriginal.isEmpty {
+                md += "\(quotedOriginal)\n\n"
+            }
             if let comparison = e.comparison {
                 for result in comparison.results {
                     md += "### \(result.label) · \(result.model)\n\n"
-                    if let response = result.response, !response.isEmpty {
-                        md += "\(response)\n\n"
+                    if let response = result.response {
+                        let clean = ArchiveMarkdownFormatter.body(response)
+                        if !clean.isEmpty {
+                            md += "\(clean)\n\n"
+                        }
                     } else if let error = result.error, !error.isEmpty {
                         md += "_\(AppFlavor.text("出错", "Error"))：\(error)_\n\n"
                     }
                 }
-            } else if let r = e.response, !r.isEmpty {
-                md += "\(r)\n\n"
+            } else if let r = e.response {
+                let clean = ArchiveMarkdownFormatter.body(r)
+                if !clean.isEmpty {
+                    md += "\(clean)\n\n"
+                }
             }
             if let context = e.contextExcerpt, !context.isEmpty {
                 md += "<details>\n<summary>\(AppFlavor.text("上下文摘录", "Context excerpt"))</summary>\n\n"

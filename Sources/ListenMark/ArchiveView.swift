@@ -166,6 +166,16 @@ private struct EntryCard: View {
         return f
     }()
 
+    private var responseText: String? {
+        guard let response = entry.response else { return nil }
+        let clean = LLMOutputSanitizer.visibleAnswer(from: response)
+        return clean.isEmpty ? nil : clean
+    }
+
+    private var playableText: String {
+        responseText ?? entry.original
+    }
+
     var body: some View {
         let tint = actionTint(entry.action)
         VStack(alignment: .leading, spacing: 8) {
@@ -199,7 +209,7 @@ private struct EntryCard: View {
                 Text(entry.sourceApp).font(.system(size: 11)).foregroundStyle(.secondary)
                 Text(Self.df.string(from: entry.date)).font(.system(size: 11)).foregroundStyle(.tertiary)
                 Spacer()
-                Button { Speaker.shared.speak(entry.response ?? entry.original) } label: {
+                Button { Speaker.shared.speak(playableText) } label: {
                     Image(systemName: "play.circle").font(.system(size: 15))
                 }.buttonStyle(.plain).foregroundStyle(hover ? .primary : .secondary).help(AppFlavor.text("重听", "Replay"))
                 Button { store.delete(entry) } label: {
@@ -228,10 +238,10 @@ private struct EntryCard: View {
 
             Text(entry.original)
                 .font(.system(size: 13))
-                .foregroundStyle(entry.response == nil ? .primary : .secondary)
+                .foregroundStyle(responseText == nil ? .primary : .secondary)
                 .lineLimit(3)
 
-            if let r = entry.response, !r.isEmpty {
+            if let r = responseText {
                 Text(r).font(.system(size: 13)).lineLimit(8).textSelection(.enabled)
             }
 

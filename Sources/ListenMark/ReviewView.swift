@@ -90,7 +90,7 @@ struct ReviewView: View {
     }
 
     private func play(_ entry: Entry) {
-        Speaker.shared.speak(entry.response ?? entry.original)
+        Speaker.shared.speak(playableText(for: entry))
         playbackTarget = .entry(entry.id)
         store.markReviewed(entry.id)
         reviewed.insert(entry.id)
@@ -104,7 +104,7 @@ struct ReviewView: View {
     private func playAll() {
         Speaker.shared.startStream()
         for entry in items {
-            Speaker.shared.feed(entry.response ?? entry.original)
+            Speaker.shared.feed(playableText(for: entry))
             store.markReviewed(entry.id)
             reviewed.insert(entry.id)
         }
@@ -115,6 +115,12 @@ struct ReviewView: View {
     private func stopPlayback() {
         Speaker.shared.stop()
         playbackTarget = nil
+    }
+
+    private func playableText(for entry: Entry) -> String {
+        guard let response = entry.response else { return entry.original }
+        let clean = LLMOutputSanitizer.visibleAnswer(from: response)
+        return clean.isEmpty ? entry.original : clean
     }
 
     private func handleAllPlaybackButton() {
@@ -180,6 +186,12 @@ private struct ReviewCard: View {
         let f = DateFormatter(); f.dateFormat = "MM-dd"; return f
     }()
 
+    private var responseText: String? {
+        guard let response = entry.response else { return nil }
+        let clean = LLMOutputSanitizer.visibleAnswer(from: response)
+        return clean.isEmpty ? nil : clean
+    }
+
     var body: some View {
         let tint = actionTint(entry.action)
         VStack(alignment: .leading, spacing: 8) {
@@ -203,9 +215,9 @@ private struct ReviewCard: View {
 
             Text(entry.original)
                 .font(.system(size: 13))
-                .foregroundStyle(entry.response == nil ? .primary : .secondary)
+                .foregroundStyle(responseText == nil ? .primary : .secondary)
                 .lineLimit(2)
-            if let r = entry.response, !r.isEmpty {
+            if let r = responseText {
                 Text(r).font(.system(size: 13)).lineLimit(5)
             }
 

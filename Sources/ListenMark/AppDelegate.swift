@@ -846,7 +846,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             do {
                 for try await delta in LLMClient.stream(prompt: request.prompt, text: request.text, provider: provider) {
                     full += delta
-                    let snapshot = full
+                    let snapshot = LLMOutputSanitizer.visibleAnswer(from: full)
                     await MainActor.run {
                         guard self.actionGeneration == generation else { return }
                         // Text streams to the UI; speech waits for the full block so it
@@ -856,7 +856,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                          compact: false, contextUsed: request.contextUsed)
                     }
                 }
-                let finalText = full
+                let finalText = LLMOutputSanitizer.visibleAnswer(from: full)
                 await MainActor.run {
                     guard self.actionGeneration == generation else { return }
                     if Settings.autoSpeakAI {
@@ -867,7 +867,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                       sourceMetadata: sourceMetadata)
                 }
             } catch is CancellationError {
-                let finalText = full
+                let finalText = LLMOutputSanitizer.visibleAnswer(from: full)
                 await MainActor.run {
                     guard self.actionGeneration == generation else { return }
                     if finalText.isEmpty {
@@ -1111,7 +1111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func recordHistory(action: String, icon: String?, source: String, original: String,
                                response: String?, comparison: ComparisonRecord? = nil) {
         let cleanOriginal = original.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanResponse = response.map { LLMOutputSanitizer.visibleAnswer(from: $0) }
         guard !cleanOriginal.isEmpty || !(cleanResponse?.isEmpty ?? true) else { return }
         HistoryStore.shared.add(HistoryEntry(action: action, icon: icon, sourceApp: source,
                                              original: cleanOriginal,
@@ -1144,7 +1144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                label: $0.label,
                                model: $0.model,
                                status: $0.error == nil ? ($0.isLoading ? "loading" : "succeeded") : "failed",
-                               response: $0.text.isEmpty ? nil : $0.text,
+                               response: $0.text.isEmpty ? nil : LLMOutputSanitizer.visibleAnswer(from: $0.text),
                                error: $0.error)
             }
         )
