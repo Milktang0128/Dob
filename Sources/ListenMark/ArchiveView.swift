@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 func actionTint(_ name: String) -> Color {
@@ -84,6 +85,26 @@ struct ArchiveView: View {
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
 
                 Text(AppFlavor.text("\(filtered.count) 条", "\(filtered.count) items")).font(.system(size: 12)).foregroundStyle(.secondary)
+
+                Divider().frame(height: 18)
+
+                Button {
+                    openArchiveInObsidian()
+                } label: {
+                    Label(AppFlavor.text("打开 Obsidian", "Open Obsidian"), systemImage: "book.closed")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(AppFlavor.text("用 Obsidian 打开 Markdown 留档", "Open the Markdown archive in Obsidian"))
+
+                Button {
+                    revealArchiveFile()
+                } label: {
+                    Label(AppFlavor.text("在访达中显示", "Show in Finder"), systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(AppFlavor.text("在访达中定位 Markdown 留档文件", "Reveal the Markdown archive file in Finder"))
             }
             .padding(14)
             Divider()
@@ -106,6 +127,30 @@ struct ArchiveView: View {
                 }
             }
         }
+    }
+
+    private func openArchiveInObsidian() {
+        ArchiveStore.shared.relocate()
+        let fileURL = ArchiveStore.shared.markdownURL
+        if let url = obsidianOpenURL(for: fileURL), NSWorkspace.shared.open(url) {
+            return
+        }
+        revealArchiveFile()
+    }
+
+    private func revealArchiveFile() {
+        ArchiveStore.shared.relocate()
+        NSWorkspace.shared.activateFileViewerSelecting([ArchiveStore.shared.markdownURL])
+    }
+
+    private func obsidianOpenURL(for fileURL: URL) -> URL? {
+        var components = URLComponents()
+        components.scheme = "obsidian"
+        components.host = "open"
+        components.queryItems = [
+            URLQueryItem(name: "path", value: fileURL.path)
+        ]
+        return components.url
     }
 }
 
