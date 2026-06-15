@@ -28,6 +28,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/ListenMark"
 cp "Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "Resources/DobStatusIcon.png" "$APP/Contents/Resources/DobStatusIcon.png"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

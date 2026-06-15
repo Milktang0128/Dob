@@ -369,8 +369,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let btn = statusItem.button {
-            btn.image = NSImage(systemSymbolName: "ear", accessibilityDescription: AppFlavor.appName)
-            btn.image?.isTemplate = true
+            if let image = NSImage(named: "DobStatusIcon") {
+                image.size = NSSize(width: 18, height: 18)
+                image.isTemplate = true
+                btn.image = image
+            } else {
+                btn.image = NSImage(systemSymbolName: "ear", accessibilityDescription: AppFlavor.appName)
+                btn.image?.isTemplate = true
+            }
         }
         let menu = NSMenu()
         let trigger = NSMenuItem(title: AppFlavor.text("处理选中文本", "Process Selection"), action: #selector(triggerFromMenu), keyEquivalent: "")
