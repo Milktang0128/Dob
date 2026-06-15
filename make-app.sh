@@ -9,6 +9,7 @@ swift build -c release
 FLAVOR="${FLAVOR:-zh}"
 VERSION="${VERSION:-0.3.3}"
 BUILD="${BUILD:-33}"
+TIMESTAMP_URL="${TIMESTAMP_URL:-http://timestamp.apple.com/ts01}"
 if [ "$FLAVOR" = "en" ] || [ "$FLAVOR" = "international" ]; then
   APP="Dob International.app"
   BUNDLE_NAME="Dob International"
@@ -23,6 +24,19 @@ else
   APP_FLAVOR="zh"
 fi
 BIN=".build/release/ListenMark"
+
+codesign_with_timestamp() {
+  local target="$1"
+  local attempt
+  for attempt in 1 2 3; do
+    if codesign --force --deep --options runtime --timestamp="$TIMESTAMP_URL" --sign "$CODESIGN_IDENTITY" "$target"; then
+      return 0
+    fi
+    echo "codesign timestamp failed for $target; retrying ($attempt/3)..." >&2
+    sleep $((attempt * 2))
+  done
+  codesign --force --deep --options runtime --timestamp="$TIMESTAMP_URL" --sign "$CODESIGN_IDENTITY" "$target"
+}
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -51,7 +65,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then
-  codesign --force --deep --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP"
+  codesign_with_timestamp "$APP"
 else
   # Ad-hoc sign so the bundle has a stable code identity for TCC in local dev.
   codesign --force --deep --sign - "$APP" 2>/dev/null || true

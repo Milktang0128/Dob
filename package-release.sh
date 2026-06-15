@@ -9,6 +9,20 @@ ARCH="${ARCH:-arm64}"
 IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Zhi Tang (LB8ZBRDP63)}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-myskills-notary}"
 NOTARY_KEYCHAIN="${NOTARY_KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
+TIMESTAMP_URL="${TIMESTAMP_URL:-http://timestamp.apple.com/ts01}"
+
+codesign_with_timestamp() {
+  local target="$1"
+  local attempt
+  for attempt in 1 2 3; do
+    if codesign --force --timestamp="$TIMESTAMP_URL" --sign "$IDENTITY" "$target"; then
+      return 0
+    fi
+    echo "codesign timestamp failed for $target; retrying ($attempt/3)..." >&2
+    sleep $((attempt * 2))
+  done
+  codesign --force --timestamp="$TIMESTAMP_URL" --sign "$IDENTITY" "$target"
+}
 
 package_one() {
   local flavor="$1"
@@ -62,7 +76,7 @@ package_one() {
   cp -R "$app_path" "$root/"
   ln -s /Applications "$root/Applications"
   hdiutil create -volname "$app_name $VERSION" -srcfolder "$root" -ov -format UDZO "$dmg"
-  codesign --force --timestamp --sign "$IDENTITY" "$dmg"
+  codesign_with_timestamp "$dmg"
 
   echo "==> Notarizing ${dmg}"
   tmp_notary="$(mktemp)"
