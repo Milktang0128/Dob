@@ -99,7 +99,7 @@ struct ActionPanelView: View {
     @State private var resultCopyArchived = false
     @State private var originalCopyToken = UUID()
     @State private var resultCopyToken = UUID()
-    @FocusState private var inputFocused: Bool
+    @State private var inputFocusRequest = 0
     @AppStorage("autoSpeakAI") private var autoSpeakAI = true
     @AppStorage("panelTextSizeDelta") private var panelTextSizeDelta = 0
 
@@ -123,9 +123,14 @@ struct ActionPanelView: View {
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
         .animation(.easeOut(duration: 0.16), value: model.phase)
+        .onAppear {
+            if model.phase == .input {
+                inputFocusRequest += 1
+            }
+        }
         .onChange(of: model.phase) { _, phase in
             if phase == .input {
-                DispatchQueue.main.async { inputFocused = true }
+                inputFocusRequest += 1
             }
         }
     }
@@ -235,22 +240,20 @@ struct ActionPanelView: View {
                     .foregroundStyle(.secondary)
 
                 ZStack(alignment: .topLeading) {
-                    TextEditor(text: inputBinding)
-                        .font(.system(size: 13))
-                        .lineSpacing(2)
-                        .scrollContentBackground(.hidden)
-                        .focused($inputFocused)
+                    PanelInputTextView(text: inputBinding, focusRequest: inputFocusRequest)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if model.inputText.isEmpty {
                         Text(AppFlavor.text("粘贴或输入任意内容，然后选择上方技能处理", "Paste or type any text, then choose an action above"))
                             .font(.system(size: 13))
                             .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 8)
+                            .padding(.top, 1)
+                            .padding(.leading, 1)
                             .allowsHitTesting(false)
                     }
                 }
                 .frame(height: 92)
-                .padding(7)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
 
                 Text(AppFlavor.text("可直接朗读，也可翻译、解释、审校或使用自定义技能。", "Read it directly, or translate, explain, proofread, or use a custom action."))

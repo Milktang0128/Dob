@@ -120,4 +120,4 @@ swift run
 - Direct capture depends on macOS Accessibility and, when needed, a simulated copy fallback. Some apps may block both.
 - Full-text context is best effort. When it is unavailable, ListenMark falls back to the selected text.
 - AI actions require an OpenAI-compatible Chat Completions API. DeepSeek is the prefilled recommended default.
-- The international edition defaults to local macOS speech; Volcengine TTS is optional and can use a custom `voice_type`.
+- The international edition defaults to local macOS speech. Volcengine, Microsoft, Google, and Tencent Cloud TTS can be configured from Services; unavailable or failed cloud speech falls back to local macOS speech.

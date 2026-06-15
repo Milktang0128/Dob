@@ -2,25 +2,29 @@ import AVFoundation
 
 /// Voice-first output with streaming support.
 /// - One-shot `speak` for first playback / 试听.
-/// - `replay` reuses the last generated Volcano audio when possible.
+/// - `replay` reuses the last generated cloud audio when possible.
 /// - `startStream` → `feed(sentence)` × N → `endStream` for speaking as text arrives.
-/// Local engine queues utterances natively; 火山 synthesizes each sentence and
-/// plays them back-to-back through a serial audio queue. 火山 failure falls back
-/// to the local voice.
+/// Local engine queues utterances natively; cloud engines synthesize each sentence
+/// or chunk and play them back-to-back through a serial audio queue. Cloud failure
+/// falls back to the local voice.
 final class Speaker: NSObject, AVAudioPlayerDelegate {
     static let shared = Speaker()
 
     private let synth = AVSpeechSynthesizer()
     private var player: AVAudioPlayer?
-    private var lastGeneratedAudio: (text: String, data: Data)?
+    private var lastGeneratedAudio: (text: String, chunks: [Data], complete: Bool)?
     private var playbackGeneration = 0
 
     private var streaming = false
-    private var volcQueue: [String] = []
-    private var volcDraining = false
+    private var cloudQueue: [String] = []
+    private var cloudDraining = false
+    private var activeCloudProvider: CloudTTSProvider?
+    private var activeCloudGeneration = 0
+    private var activeCacheText: String?
+    private var activeGeneratedChunks: [Data] = []
     private var onFinishPlay: (() -> Void)?
 
-    private var useVolcano: Bool { Settings.ttsEngine == "volcano" && Settings.volcConfigured }
+    private var cloudProvider: CloudTTSProvider? { CloudTTS.currentProvider() }
 
     // MARK: One-shot
 
@@ -29,26 +33,12 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         guard !t.isEmpty else { return }
         stop()
         let generation = nextPlaybackGeneration()
-        if useVolcano {
-            Task { [weak self] in
-                do {
-                    let data = try await VolcanoTTS.synthesize(t)
-                    guard let self else { return }
-                    await MainActor.run {
-                        guard self.playbackGeneration == generation else { return }
-                        self.lastGeneratedAudio = (t, data)
-                        self.playThen(data) {}
-                    }
-                } catch {
-                    NSLog("ListenMark · 火山 TTS 失败，回退本地语音：\(error)")
-                    guard let self else { return }
-                    await MainActor.run {
-                        guard self.playbackGeneration == generation else { return }
-                        self.lastGeneratedAudio = nil
-                        self.localSpeak(t)
-                    }
-                }
-            }
+        if let provider = cloudProvider {
+            lastGeneratedAudio = (t, [], false)
+            enqueueCloud(CloudTTS.textChunks(t, provider: provider),
+                         provider: provider,
+                         generation: generation,
+                         cacheText: t)
         } else {
             lastGeneratedAudio = nil
             localSpeak(t)
@@ -59,8 +49,8 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         stop()
-        if let audio = lastGeneratedAudio, audio.text == t {
-            playThen(audio.data) {}
+        if let audio = lastGeneratedAudio, audio.text == t, audio.complete {
+            playSequence(audio.chunks) {}
         } else {
             speak(t)
         }
@@ -71,13 +61,15 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
     func startStream() {
         stop()
         streaming = true
+        activeCloudProvider = cloudProvider
+        activeCloudGeneration = playbackGeneration
     }
 
     func feed(_ sentence: String) {
         let s = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
         guard streaming, !s.isEmpty else { return }
-        if useVolcano {
-            volcQueue.append(s)
+        if let provider = activeCloudProvider {
+            cloudQueue.append(contentsOf: CloudTTS.textChunks(s, provider: provider))
             startDrainIfNeeded()
         } else {
             synth.speak(utterance(for: s))   // AVSpeechSynthesizer queues
@@ -93,8 +85,11 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
         streaming = false
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         player?.stop(); player = nil
-        volcQueue.removeAll()
-        volcDraining = false
+        cloudQueue.removeAll()
+        cloudDraining = false
+        activeCloudProvider = nil
+        activeCacheText = nil
+        activeGeneratedChunks = []
         onFinishPlay = nil
     }
 
@@ -115,24 +110,71 @@ final class Speaker: NSObject, AVAudioPlayerDelegate {
     }
 
     private func startDrainIfNeeded() {
-        guard !volcDraining else { return }
-        volcDraining = true
+        guard !cloudDraining else { return }
+        cloudDraining = true
         drainNext()
     }
 
+    private func enqueueCloud(_ chunks: [String],
+                              provider: CloudTTSProvider,
+                              generation: Int,
+                              cacheText: String?) {
+        activeCloudProvider = provider
+        activeCloudGeneration = generation
+        activeCacheText = cacheText
+        activeGeneratedChunks = []
+        cloudQueue.append(contentsOf: chunks)
+        startDrainIfNeeded()
+    }
+
     private func drainNext() {
-        guard !volcQueue.isEmpty else { volcDraining = false; return }
-        let next = volcQueue.removeFirst()
+        guard playbackGeneration == activeCloudGeneration else { return }
+        guard !cloudQueue.isEmpty else {
+            cloudDraining = false
+            if let text = activeCacheText {
+                lastGeneratedAudio = (text, activeGeneratedChunks, true)
+            }
+            return
+        }
+        let next = cloudQueue.removeFirst()
+        guard let provider = activeCloudProvider else {
+            localSpeak(next)
+            drainNext()
+            return
+        }
         Task { [weak self] in
             do {
-                let data = try await VolcanoTTS.synthesize(next)
+                let data = try await provider.synthesize(next)
                 guard let self else { return }
-                await MainActor.run { self.playThen(data) { [weak self] in self?.drainNext() } }
+                await MainActor.run {
+                    guard self.playbackGeneration == self.activeCloudGeneration else { return }
+                    if let text = self.activeCacheText {
+                        self.activeGeneratedChunks.append(data)
+                        self.lastGeneratedAudio = (text, self.activeGeneratedChunks, false)
+                    }
+                    self.playThen(data) { [weak self] in self?.drainNext() }
+                }
             } catch {
-                NSLog("ListenMark · 火山 TTS 失败，回退本地语音：\(error)")
+                NSLog("ListenMark · \(provider.displayName) 失败，回退本地语音：\(error)")
                 guard let self else { return }
-                await MainActor.run { self.localSpeak(next); self.drainNext() }
+                await MainActor.run {
+                    guard self.playbackGeneration == self.activeCloudGeneration else { return }
+                    let remaining = ([next] + self.cloudQueue).joined(separator: "\n")
+                    self.cloudQueue.removeAll()
+                    self.cloudDraining = false
+                    self.lastGeneratedAudio = nil
+                    self.localSpeak(remaining)
+                }
             }
+        }
+    }
+
+    private func playSequence(_ chunks: [Data], _ done: @escaping () -> Void) {
+        var remaining = chunks
+        guard !remaining.isEmpty else { done(); return }
+        let first = remaining.removeFirst()
+        playThen(first) { [weak self] in
+            self?.playSequence(remaining, done)
         }
     }
 

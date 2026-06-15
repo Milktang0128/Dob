@@ -6,6 +6,9 @@ struct ServicesView: View {
         URL(string: AppFlavor.text("https://www.volcengine.com/docs/6561/1257544?lang=zh",
                                    "https://www.volcengine.com/docs/6561/1257544"))!
     }
+    private static let microsoftSpeechDocsURL = URL(string: "https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech")!
+    private static let googleSpeechDocsURL = URL(string: "https://cloud.google.com/text-to-speech/docs")!
+    private static let tencentSpeechDocsURL = URL(string: "https://cloud.tencent.com/document/product/1073")!
 
     private enum Category: String, CaseIterable, Identifiable, Hashable {
         case text
@@ -38,6 +41,9 @@ struct ServicesView: View {
         case systemOCR
         case localSpeech
         case volcanoSpeech
+        case microsoftSpeech
+        case googleSpeech
+        case tencentSpeech
     }
 
     @State private var category: Category = .text
@@ -67,6 +73,18 @@ struct ServicesView: View {
     @AppStorage("volcCluster") private var volcCluster = "volcano_tts"
     @AppStorage("volcVoice") private var volcVoice = AppFlavor.text("zh_female_cancan_uranus_bigtts", "en_female_dacey_uranus_bigtts")
     @AppStorage("volcSpeed") private var volcSpeed = 1.0
+    @AppStorage("microsoftTTSKey") private var microsoftTTSKey = ""
+    @AppStorage("microsoftTTSRegion") private var microsoftTTSRegion = "eastasia"
+    @AppStorage("microsoftTTSVoice") private var microsoftTTSVoice = "zh-CN-XiaoxiaoNeural"
+    @AppStorage("googleTTSKey") private var googleTTSKey = ""
+    @AppStorage("googleTTSVoice") private var googleTTSVoice = "cmn-CN-Standard-A"
+    @AppStorage("googleTTSSpeed") private var googleTTSSpeed = 1.0
+    @AppStorage("tencentTTSSecretId") private var tencentTTSSecretId = ""
+    @AppStorage("tencentTTSSecretKey") private var tencentTTSSecretKey = ""
+    @AppStorage("tencentTTSHost") private var tencentTTSHost = AppFlavor.text("tts.tencentcloudapi.com", "tts.intl.tencentcloudapi.com")
+    @AppStorage("tencentTTSRegion") private var tencentTTSRegion = "ap-guangzhou"
+    @AppStorage("tencentTTSVoice") private var tencentTTSVoice = AppFlavor.text("1001", "1050")
+    @AppStorage("tencentTTSSpeed") private var tencentTTSSpeed = 0.0
     @AppStorage("rate") private var rate = Double(AVSpeechUtteranceDefaultSpeechRate)
 
     private var compareCount: Int {
@@ -76,6 +94,24 @@ struct ServicesView: View {
     private var volcanoConfigured: Bool {
         !volcAppId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !volcToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var microsoftConfigured: Bool {
+        !microsoftTTSKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !microsoftTTSRegion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !microsoftTTSVoice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var googleConfigured: Bool {
+        !googleTTSKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !googleTTSVoice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var tencentConfigured: Bool {
+        !tencentTTSSecretId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !tencentTTSSecretKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !tencentTTSHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !tencentTTSRegion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -177,9 +213,30 @@ struct ServicesView: View {
                     row(title: AppFlavor.text("火山引擎 TTS", "Volcengine TTS"),
                         subtitle: volcVoice,
                         icon: "waveform",
-                        badge: ttsEngine == "volcano" ? AppFlavor.text("正在使用", "Active") : AppFlavor.text("关闭", "Off"),
+                        badge: speechBadge(engine: "volcano", configured: volcanoConfigured),
                         selected: selection == .volcanoSpeech) {
                         selection = .volcanoSpeech
+                    }
+                    row(title: AppFlavor.text("Microsoft 语音合成", "Microsoft Speech"),
+                        subtitle: microsoftTTSVoice,
+                        icon: "square.grid.2x2",
+                        badge: speechBadge(engine: "microsoft", configured: microsoftConfigured),
+                        selected: selection == .microsoftSpeech) {
+                        selection = .microsoftSpeech
+                    }
+                    row(title: AppFlavor.text("Google 语音合成", "Google Text-to-Speech"),
+                        subtitle: googleTTSVoice,
+                        icon: "g.circle",
+                        badge: speechBadge(engine: "google", configured: googleConfigured),
+                        selected: selection == .googleSpeech) {
+                        selection = .googleSpeech
+                    }
+                    row(title: AppFlavor.text("腾讯云语音合成", "Tencent Cloud TTS"),
+                        subtitle: tencentTTSVoice,
+                        icon: "cloud",
+                        badge: speechBadge(engine: "tencent", configured: tencentConfigured),
+                        selected: selection == .tencentSpeech) {
+                        selection = .tencentSpeech
                     }
                 }
             }
@@ -215,6 +272,12 @@ struct ServicesView: View {
                     localSpeechDetail
                 case .volcanoSpeech:
                     volcanoSpeechDetail
+                case .microsoftSpeech:
+                    microsoftSpeechDetail
+                case .googleSpeech:
+                    googleSpeechDetail
+                case .tencentSpeech:
+                    tencentSpeechDetail
                 }
             }
             .padding(24)
@@ -345,7 +408,7 @@ struct ServicesView: View {
             } label: {
                 Label(AppFlavor.text("设为当前语音服务", "Use as current speech service"), systemImage: "checkmark.circle")
             }
-            .disabled(ttsEngine == "volcano")
+            .disabled(ttsEngine == "volcano" || !volcanoConfigured)
             serviceFields {
                 SecureField("App ID", text: $volcAppId)
                 SecureField("Access Token", text: $volcToken)
@@ -381,8 +444,137 @@ struct ServicesView: View {
                     .foregroundStyle(.orange)
             }
             Button(AppFlavor.text("试听", "Test Voice")) {
+                ttsEngine = "volcano"
                 Settings.speechRate = Float(rate)
                 Speaker.shared.speak(AppFlavor.text("过耳不忘，这是当前火山音色的试听效果。", "ListenMark. This is the current Volcengine voice."))
+            }
+            .disabled(!volcanoConfigured)
+        }
+    }
+
+    private var microsoftSpeechDetail: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: AppFlavor.text("Microsoft 语音合成", "Microsoft Speech"),
+                         subtitle: AppFlavor.text("通过 Azure AI Speech REST API 合成 MP3。Region 可填写 eastasia，也可粘贴 Speech 资源 Endpoint。",
+                                                  "Uses Azure AI Speech REST API to synthesize MP3. Region can be eastasia, or paste a Speech resource endpoint."),
+                         icon: "square.grid.2x2",
+                         status: speechBadge(engine: "microsoft", configured: microsoftConfigured))
+            Button {
+                ttsEngine = "microsoft"
+            } label: {
+                Label(AppFlavor.text("设为当前语音服务", "Use as current speech service"), systemImage: "checkmark.circle")
+            }
+            .disabled(ttsEngine == "microsoft" || !microsoftConfigured)
+            serviceFields {
+                SecureField("Key", text: $microsoftTTSKey)
+                TextField(AppFlavor.text("Region 或 Endpoint，例如 eastasia", "Region or endpoint, e.g. eastasia"),
+                          text: $microsoftTTSRegion)
+                TextField(AppFlavor.text("Voice，例如 zh-CN-XiaoxiaoNeural", "Voice, e.g. en-US-JennyNeural"),
+                          text: $microsoftTTSVoice)
+            }
+            HStack {
+                Link(AppFlavor.text("查看官方文档 ↗", "Open docs ↗"), destination: Self.microsoftSpeechDocsURL)
+                    .font(.caption)
+                Spacer()
+                Button(AppFlavor.text("试听", "Test Voice")) {
+                    ttsEngine = "microsoft"
+                    Speaker.shared.speak(AppFlavor.text("过耳不忘，这是 Microsoft 语音合成的试听效果。", "ListenMark. This is the Microsoft Speech voice."))
+                }
+                .disabled(!microsoftConfigured)
+            }
+            if !microsoftConfigured {
+                helperText(AppFlavor.text("需要填写 Key、Region/Endpoint 和 Voice 后才能启用。",
+                                          "Key, Region/Endpoint, and Voice are required before this service can be enabled."))
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private var googleSpeechDetail: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: AppFlavor.text("Google 语音合成", "Google Text-to-Speech"),
+                         subtitle: AppFlavor.text("通过 Cloud Text-to-Speech REST API 合成 MP3。支持 API Key；如果你填 Bearer Token，也会按授权头发送。",
+                                                  "Uses Cloud Text-to-Speech REST API to synthesize MP3. API keys are supported; Bearer tokens are sent as Authorization."),
+                         icon: "g.circle",
+                         status: speechBadge(engine: "google", configured: googleConfigured))
+            Button {
+                ttsEngine = "google"
+            } label: {
+                Label(AppFlavor.text("设为当前语音服务", "Use as current speech service"), systemImage: "checkmark.circle")
+            }
+            .disabled(ttsEngine == "google" || !googleConfigured)
+            serviceFields {
+                SecureField(AppFlavor.text("API Key 或 Bearer Token", "API key or Bearer token"), text: $googleTTSKey)
+                TextField(AppFlavor.text("Voice，例如 cmn-CN-Standard-A", "Voice, e.g. en-US-Neural2-F"),
+                          text: $googleTTSVoice)
+                HStack {
+                    Text(AppFlavor.text("语速", "Speed"))
+                    Slider(value: $googleTTSSpeed, in: 0.25...4.0)
+                    Text(String(format: "%.2fx", googleTTSSpeed))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 54, alignment: .trailing)
+                }
+            }
+            HStack {
+                Link(AppFlavor.text("查看官方文档 ↗", "Open docs ↗"), destination: Self.googleSpeechDocsURL)
+                    .font(.caption)
+                Spacer()
+                Button(AppFlavor.text("试听", "Test Voice")) {
+                    ttsEngine = "google"
+                    Speaker.shared.speak(AppFlavor.text("过耳不忘，这是 Google 语音合成的试听效果。", "ListenMark. This is the Google Text-to-Speech voice."))
+                }
+                .disabled(!googleConfigured)
+            }
+            if !googleConfigured {
+                helperText(AppFlavor.text("需要填写 API Key/Bearer Token 和 Voice 后才能启用。",
+                                          "API key/Bearer token and Voice are required before this service can be enabled."))
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private var tencentSpeechDetail: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: AppFlavor.text("腾讯云语音合成", "Tencent Cloud TTS"),
+                         subtitle: AppFlavor.text("通过腾讯云 TextToVoice API 合成 MP3。长文本会自动切成小段顺序播放。",
+                                                  "Uses Tencent Cloud TextToVoice API to synthesize MP3. Long text is split into sequential chunks."),
+                         icon: "cloud",
+                         status: speechBadge(engine: "tencent", configured: tencentConfigured))
+            Button {
+                ttsEngine = "tencent"
+            } label: {
+                Label(AppFlavor.text("设为当前语音服务", "Use as current speech service"), systemImage: "checkmark.circle")
+            }
+            .disabled(ttsEngine == "tencent" || !tencentConfigured)
+            serviceFields {
+                SecureField("SecretId", text: $tencentTTSSecretId)
+                SecureField("SecretKey", text: $tencentTTSSecretKey)
+                TextField("Host", text: $tencentTTSHost)
+                TextField(AppFlavor.text("Region，例如 ap-guangzhou", "Region, e.g. ap-guangzhou"), text: $tencentTTSRegion)
+                TextField(AppFlavor.text("VoiceType，例如 1001", "VoiceType, e.g. 1050"),
+                          text: $tencentTTSVoice)
+                HStack {
+                    Text(AppFlavor.text("语速", "Speed"))
+                    Slider(value: $tencentTTSSpeed, in: -2.0...6.0)
+                    Text(String(format: "%.1f", tencentTTSSpeed))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 42, alignment: .trailing)
+                }
+            }
+            HStack {
+                Link(AppFlavor.text("查看官方文档 ↗", "Open docs ↗"), destination: Self.tencentSpeechDocsURL)
+                    .font(.caption)
+                Spacer()
+                Button(AppFlavor.text("试听", "Test Voice")) {
+                    ttsEngine = "tencent"
+                    Speaker.shared.speak(AppFlavor.text("过耳不忘，这是腾讯云语音合成的试听效果。", "ListenMark. This is the Tencent Cloud TTS voice."))
+                }
+                .disabled(!tencentConfigured)
+            }
+            if !tencentConfigured {
+                helperText(AppFlavor.text("需要填写 SecretId、SecretKey、Host 和 Region 后才能启用。",
+                                          "SecretId, SecretKey, Host, and Region are required before this service can be enabled."))
+                    .foregroundStyle(.orange)
             }
         }
     }
@@ -488,6 +680,8 @@ struct ServicesView: View {
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 126), spacing: 8)], alignment: .leading, spacing: 8) {
                 ForEach(LLMServicePresets.all) { preset in
+                    let modelLabel = preset.model.isEmpty ? AppFlavor.text("自定义模型", "Custom model") : preset.model
+                    let endpointLabel = preset.baseURL.isEmpty ? AppFlavor.text("手动填写 Base URL", "Custom Base URL") : preset.baseURL
                     Button {
                         onApply(preset)
                     } label: {
@@ -495,7 +689,7 @@ struct ServicesView: View {
                             Text(preset.name)
                                 .font(.system(size: 12, weight: .semibold))
                                 .lineLimit(1)
-                            Text(preset.model)
+                            Text(modelLabel)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -514,7 +708,7 @@ struct ServicesView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .help("\(preset.baseURL) · \(preset.model)")
+                    .help("\(endpointLabel) · \(modelLabel)")
                 }
             }
             helperText(AppFlavor.text("点击预设只会填充 Base URL 和模型名，不会覆盖 API Key；模型名仍可按账号权限手动修改。",
@@ -545,11 +739,23 @@ struct ServicesView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    private func speechBadge(engine: String, configured: Bool) -> String {
+        if ttsEngine == engine { return AppFlavor.text("正在使用", "Active") }
+        return configured ? AppFlavor.text("已配置", "Configured") : AppFlavor.text("未配置", "Missing")
+    }
+
     private func defaultSelection(for category: Category) -> Selection {
         switch category {
         case .text: return .defaultModel
         case .recognition: return .systemOCR
-        case .speech: return ttsEngine == "volcano" ? .volcanoSpeech : .localSpeech
+        case .speech:
+            switch ttsEngine {
+            case "volcano": return .volcanoSpeech
+            case "microsoft": return .microsoftSpeech
+            case "google": return .googleSpeech
+            case "tencent": return .tencentSpeech
+            default: return .localSpeech
+            }
         }
     }
 }

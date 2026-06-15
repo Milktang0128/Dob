@@ -29,6 +29,14 @@ enum LLMServicePresets {
                 note: AppFlavor.text("国际通用，模型名可按账号权限调整", "General-purpose provider")
             ),
             LLMServicePreset(
+                id: "custom-openai-compatible",
+                name: AppFlavor.text("自定义 OpenAI 兼容", "Custom OpenAI-Compatible"),
+                baseURL: "",
+                model: "",
+                keyURL: nil,
+                note: AppFlavor.text("手动填写 Base URL 和模型名", "Enter Base URL and model")
+            ),
+            LLMServicePreset(
                 id: "kimi",
                 name: AppFlavor.text("Kimi", "Kimi"),
                 baseURL: "https://api.moonshot.ai/v1",

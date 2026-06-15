@@ -135,6 +135,7 @@ final class ActionPanel: NSPanel {
             if origin.y - maxExpansion < vf.minY { origin.y = mouse.y + 18 }
         }
         setFrameOrigin(origin)
+        makeKeyAndOrderFront(nil)
         orderFrontRegardless()
     }
 
@@ -149,6 +150,10 @@ final class ActionPanel: NSPanel {
         }
         if command, keyCode == kVK_ANSI_P {
             model.onTogglePin?()
+            return true
+        }
+        if command, keyCode == kVK_ANSI_Comma {
+            model.onOpenSettings?()
             return true
         }
 

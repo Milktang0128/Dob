@@ -28,9 +28,20 @@ struct SettingsView: View {
     }
 
     private var speechStatus: String {
-        if ttsEngine == "local" { return AppFlavor.text("本地语音", "Local Speech") }
-        let configured = !volcAppId.isEmpty && !volcToken.isEmpty
-        return configured ? AppFlavor.text("火山引擎", "Volcengine") : AppFlavor.text("火山未配置，回退本地", "Volcengine missing, falls back")
+        switch ttsEngine {
+        case "local":
+            return AppFlavor.text("本地语音", "Local Speech")
+        case "volcano":
+            return Settings.volcConfigured ? AppFlavor.text("火山引擎", "Volcengine") : AppFlavor.text("火山未配置，回退本地", "Volcengine missing, falls back")
+        case "microsoft":
+            return Settings.microsoftTTSConfigured ? AppFlavor.text("Microsoft 语音", "Microsoft Speech") : AppFlavor.text("Microsoft 未配置，回退本地", "Microsoft missing, falls back")
+        case "google":
+            return Settings.googleTTSConfigured ? AppFlavor.text("Google 语音", "Google Speech") : AppFlavor.text("Google 未配置，回退本地", "Google missing, falls back")
+        case "tencent":
+            return Settings.tencentTTSConfigured ? AppFlavor.text("腾讯云语音", "Tencent TTS") : AppFlavor.text("腾讯云未配置，回退本地", "Tencent missing, falls back")
+        default:
+            return AppFlavor.text("本地语音", "Local Speech")
+        }
     }
 
     var body: some View {
@@ -41,7 +52,6 @@ struct SettingsView: View {
                 captureSection
                 fallbackSection
                 behaviorSection
-                actionsSection
                 archiveSection
             }
             .padding(20)
@@ -158,32 +168,6 @@ struct SettingsView: View {
                           subtitle: AppFlavor.text("关闭后，解释、翻译、提炼等结果默认只显示不朗读；朗读技能不受影响。",
                                                    "When off, Explain, Translate, and similar results show without speaking. Read is unaffected."),
                           isOn: $autoSpeakAI)
-        }
-    }
-
-    private var actionsSection: some View {
-        SettingsSection(title: AppFlavor.text("技能", "Actions"),
-                        subtitle: AppFlavor.text("技能是工具条上的具体动作；服务是它们调用的底层能力。",
-                                                 "Actions are toolbar commands; services are the underlying providers they use.")) {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "list.bullet.rectangle")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 32)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(AppFlavor.text("朗读固定第一，其它技能可排序、禁用、设置快捷键或编辑提示词。",
-                                        "Read stays first. Other actions can be reordered, disabled, given hotkeys, or edited."))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(AppFlavor.text("浮窗显示前 5 个启用技能，其余收进更多菜单。",
-                                        "The panel shows the first 5 enabled actions; the rest move into More."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(AppFlavor.text("编辑…", "Edit…")) {
-                    NotificationCenter.default.post(name: .gebwOpenActions, object: nil)
-                }
-            }
         }
     }
 

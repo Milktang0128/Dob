@@ -64,9 +64,9 @@
 1. 打开 App 后授予 **辅助功能** 权限：系统设置 -> 隐私与安全性 -> 辅助功能 -> 打开「过耳不忘」。
 2. 菜单栏耳朵图标 -> **服务管理...**：
    - **文本处理**：默认预填 DeepSeek 推荐配置；也可以填写任何 OpenAI 兼容接口的 Base URL、API Key 和模型名。
-   - **服务商预设**：内置 DeepSeek、OpenAI、Kimi、通义千问 / 百炼、智谱 GLM、火山方舟、SiliconFlow、Google Gemini、OpenRouter 等预设；点击后只填 Base URL 和模型名，不覆盖 API Key。
+   - **服务商预设**：内置 DeepSeek、OpenAI、自定义 OpenAI 兼容、Kimi、通义千问 / 百炼、智谱 GLM、火山方舟、SiliconFlow、Google Gemini、OpenRouter 等预设；点击后只填 Base URL 和模型名，不覆盖 API Key。
    - **文本识别**：系统 OCR 使用 Apple Vision 本地识别，无需密钥。
-   - **语音合成**：中文版默认火山引擎 TTS；未配置或失败时回退到 macOS 本地语音。服务页提供[官方完整音色列表](https://www.volcengine.com/docs/6561/1257544?lang=zh)链接，也支持手填 `voice_type`。
+   - **语音合成**：中文版默认火山引擎 TTS；也可配置 Microsoft、Google、腾讯云 TTS。未配置或失败时回退到 macOS 本地语音。火山服务页提供[官方完整音色列表](https://www.volcengine.com/docs/6561/1257544?lang=zh)链接，也支持手填 `voice_type`。
 3. 选中任意应用里的文字，等待浮窗弹出，或按弹出面板快捷键 `Option + Command + R`。
 
 > 每次重新构建开发版都会重新签名，macOS 可能作废旧的辅助功能授权。重新构建后请移除旧授权、重新添加 App，并重启。
@@ -151,7 +151,7 @@ swift run
 | `Sources/ListenMark/SelectionGrabber.swift` | AX 选区、上下文读取、模拟复制回退 |
 | `Sources/ListenMark/ScreenOCR.swift` | 屏幕选框 OCR |
 | `Sources/ListenMark/LLMClient.swift` | OpenAI 兼容 Chat Completions |
-| `Sources/ListenMark/Speaker.swift` / `VolcanoTTS.swift` | 本地语音和火山引擎 TTS |
+| `Sources/ListenMark/Speaker.swift` / `CloudTTS.swift` / `VolcanoTTS.swift` | 本地语音、火山引擎、Microsoft、Google、腾讯云 TTS |
 | `Sources/ListenMark/ArchiveStore.swift` | 本地 JSON 和 Markdown 留档 |
 | `Sources/ListenMark/HistoryStore.swift` / `HistoryView.swift` | 最近 500 条静默历史记录 |
 | `Sources/ListenMark/ArchiveView.swift` / `ReviewView.swift` | 档案和今日回响 |
@@ -163,4 +163,4 @@ swift run
 - 取词依赖 Accessibility 和模拟复制；少数禁用复制、跨进程隔离强或未暴露可访问文本的应用可能拿不到全文上下文。
 - 屏幕 OCR 是兜底能力，识别质量取决于截图清晰度、语言和系统 Vision OCR。
 - AI 技能依赖 OpenAI 兼容 Chat Completions API；默认推荐 DeepSeek，没有 Key 时仍可使用朗读、OCR、复制、留档和档案。
-- 火山引擎音色需要在控制台开通对应 `voice_type`；设置页下拉只列常用音色，完整列表以[官方文档](https://www.volcengine.com/docs/6561/1257544?lang=zh)为准。
+- 云端语音服务需要在对应控制台开通并填写密钥；火山引擎音色需要开通对应 `voice_type`，设置页下拉只列常用音色，完整列表以[官方文档](https://www.volcengine.com/docs/6561/1257544?lang=zh)为准。

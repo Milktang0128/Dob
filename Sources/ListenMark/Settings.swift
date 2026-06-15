@@ -155,7 +155,7 @@ enum Settings {
 
     // MARK: Speech engine
 
-    /// "volcano" (火山引擎, recommended) or "local" (macOS).
+    /// "local" (macOS), "volcano", "microsoft", "google", or "tencent".
     static var ttsEngine: String {
         get {
             let e = d.string(forKey: "ttsEngine") ?? ""
@@ -196,6 +196,96 @@ enum Settings {
     }
 
     static var volcConfigured: Bool { !volcAppId.isEmpty && !volcToken.isEmpty }
+
+    static var microsoftTTSKey: String {
+        get { d.string(forKey: "microsoftTTSKey") ?? "" }
+        set { d.set(newValue, forKey: "microsoftTTSKey") }
+    }
+
+    static var microsoftTTSRegion: String {
+        get {
+            let value = d.string(forKey: "microsoftTTSRegion") ?? ""
+            return value.isEmpty ? "eastasia" : value
+        }
+        set { d.set(newValue, forKey: "microsoftTTSRegion") }
+    }
+
+    static var microsoftTTSVoice: String {
+        get {
+            let value = d.string(forKey: "microsoftTTSVoice") ?? ""
+            return value.isEmpty ? "zh-CN-XiaoxiaoNeural" : value
+        }
+        set { d.set(newValue, forKey: "microsoftTTSVoice") }
+    }
+
+    static var microsoftTTSConfigured: Bool {
+        !microsoftTTSKey.isEmpty && !microsoftTTSRegion.isEmpty && !microsoftTTSVoice.isEmpty
+    }
+
+    static var googleTTSKey: String {
+        get { d.string(forKey: "googleTTSKey") ?? "" }
+        set { d.set(newValue, forKey: "googleTTSKey") }
+    }
+
+    static var googleTTSVoice: String {
+        get {
+            let value = d.string(forKey: "googleTTSVoice") ?? ""
+            return value.isEmpty ? "cmn-CN-Standard-A" : value
+        }
+        set { d.set(newValue, forKey: "googleTTSVoice") }
+    }
+
+    static var googleTTSSpeed: Double {
+        get { d.object(forKey: "googleTTSSpeed") == nil ? 1.0 : d.double(forKey: "googleTTSSpeed") }
+        set { d.set(newValue, forKey: "googleTTSSpeed") }
+    }
+
+    static var googleTTSConfigured: Bool {
+        !googleTTSKey.isEmpty && !googleTTSVoice.isEmpty
+    }
+
+    static var tencentTTSSecretId: String {
+        get { d.string(forKey: "tencentTTSSecretId") ?? "" }
+        set { d.set(newValue, forKey: "tencentTTSSecretId") }
+    }
+
+    static var tencentTTSSecretKey: String {
+        get { d.string(forKey: "tencentTTSSecretKey") ?? "" }
+        set { d.set(newValue, forKey: "tencentTTSSecretKey") }
+    }
+
+    static var tencentTTSHost: String {
+        get {
+            let value = d.string(forKey: "tencentTTSHost") ?? ""
+            return value.isEmpty ? AppFlavor.text("tts.tencentcloudapi.com", "tts.intl.tencentcloudapi.com") : value
+        }
+        set { d.set(newValue, forKey: "tencentTTSHost") }
+    }
+
+    static var tencentTTSRegion: String {
+        get {
+            let value = d.string(forKey: "tencentTTSRegion") ?? ""
+            return value.isEmpty ? "ap-guangzhou" : value
+        }
+        set { d.set(newValue, forKey: "tencentTTSRegion") }
+    }
+
+    static var tencentTTSVoice: String {
+        get {
+            let value = d.string(forKey: "tencentTTSVoice") ?? ""
+            return value.isEmpty ? AppFlavor.text("1001", "1050") : value
+        }
+        set { d.set(newValue, forKey: "tencentTTSVoice") }
+    }
+
+    static var tencentTTSSpeed: Double {
+        get { d.object(forKey: "tencentTTSSpeed") == nil ? 0.0 : d.double(forKey: "tencentTTSSpeed") }
+        set { d.set(newValue, forKey: "tencentTTSSpeed") }
+    }
+
+    static var tencentTTSConfigured: Bool {
+        !tencentTTSSecretId.isEmpty && !tencentTTSSecretKey.isEmpty && !tencentTTSHost.isEmpty && !tencentTTSRegion.isEmpty
+    }
 
     // MARK: Archive
 
