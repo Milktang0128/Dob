@@ -602,7 +602,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func closePanel() {
         removeOutsideMonitor()
-        cancelActiveAction()
+        cancelActiveAction(stopSpeech: false)
         panelIsFadingOut = false
         panel.model.pinned = false
         panel.releaseKeyboardFocus()
@@ -691,7 +691,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             guard let self else { return }
-            self.cancelActiveAction()
+            self.cancelActiveAction(stopSpeech: false)
             self.panel.model.pinned = false
             self.panel.releaseKeyboardFocus()
             self.panel.orderOut(nil)
@@ -757,11 +757,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         closePanel()
     }
 
-    private func cancelActiveAction() {
+    private func cancelActiveAction(stopSpeech: Bool = true) {
         actionGeneration += 1
         streamTask?.cancel()
         streamTask = nil
-        Speaker.shared.stop()
+        if stopSpeech {
+            Speaker.shared.stop()
+        }
     }
 
     private func retryCurrentAction() {

@@ -11,9 +11,9 @@ struct ServicesView: View {
     private static let tencentSpeechDocsURL = URL(string: "https://cloud.tencent.com/document/product/1073/92668")!
 
     private enum Category: String, CaseIterable, Identifiable, Hashable {
+        case speech
         case text
         case recognition
-        case speech
 
         var id: String { rawValue }
 
@@ -50,8 +50,8 @@ struct ServicesView: View {
         var message: String
     }
 
-    @State private var category: Category = .text
-    @State private var selection: Selection = .defaultModel
+    @State private var category: Category = .speech
+    @State private var selection: Selection = defaultSpeechSelection()
     @State private var llmProviders: [LLMServiceProvider] = Settings.llmServiceProviders
     @State private var testingServices = Set<String>()
     @State private var serviceTestResults: [String: ServiceTestResult] = [:]
@@ -1042,13 +1042,17 @@ struct ServicesView: View {
         case .text: return .defaultModel
         case .recognition: return .systemOCR
         case .speech:
-            switch ttsEngine {
-            case "volcano": return .volcanoSpeech
-            case "microsoft": return .microsoftSpeech
-            case "google": return .googleSpeech
-            case "tencent": return .tencentSpeech
-            default: return .localSpeech
-            }
+            return Self.defaultSpeechSelection()
+        }
+    }
+
+    private static func defaultSpeechSelection() -> Selection {
+        switch Settings.ttsEngine {
+        case "volcano": return .volcanoSpeech
+        case "microsoft": return .microsoftSpeech
+        case "google": return .googleSpeech
+        case "tencent": return .tencentSpeech
+        default: return .localSpeech
         }
     }
 }

@@ -25,6 +25,8 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private var streaming = false
     private var cloudQueue: [String] = []
+    private var cloudAudioQueue: [Data] = []
+    private var cloudSynthesizing = false
     private var cloudDraining = false
     private var activeCloudProvider: CloudTTSProvider?
     private var activeCloudGeneration = 0
@@ -134,6 +136,8 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if synth.isSpeaking || synth.isPaused { synth.stopSpeaking(at: .immediate) }
         player?.stop(); player = nil
         cloudQueue.removeAll()
+        cloudAudioQueue.removeAll()
+        cloudSynthesizing = false
         cloudDraining = false
         activeCloudProvider = nil
         activeCacheText = nil
@@ -165,9 +169,10 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     private func startDrainIfNeeded() {
-        guard !cloudDraining else { return }
+        guard activeCloudProvider != nil else { return }
         cloudDraining = true
-        drainNext()
+        synthesizeNextCloudChunkIfNeeded()
+        playNextCloudChunkIfNeeded()
     }
 
     private func enqueueCloud(_ chunks: [String],
@@ -182,50 +187,92 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
         startDrainIfNeeded()
     }
 
-    private func drainNext() {
+    private func synthesizeNextCloudChunkIfNeeded() {
         guard playbackGeneration == activeCloudGeneration else { return }
-        guard !cloudQueue.isEmpty else {
-            cloudDraining = false
-            if let text = activeCacheText {
-                lastGeneratedAudio = (text, activeGeneratedChunks, true)
-            }
-            setStatus(.idle)
-            return
-        }
+        guard !cloudSynthesizing, !cloudQueue.isEmpty else { return }
         let next = cloudQueue.removeFirst()
         guard let provider = activeCloudProvider else {
             localSpeak(next)
-            drainNext()
+            synthesizeNextCloudChunkIfNeeded()
             return
         }
-        setStatus(.preparing(provider.displayName))
+        cloudSynthesizing = true
+        if player == nil && cloudAudioQueue.isEmpty && !isPaused {
+            setStatus(.preparing(provider.displayName))
+        }
         Task { [weak self] in
             do {
                 let data = try await provider.synthesize(next)
                 guard let self else { return }
                 await MainActor.run {
                     guard self.playbackGeneration == self.activeCloudGeneration else { return }
+                    self.cloudSynthesizing = false
                     if let text = self.activeCacheText {
                         self.activeGeneratedChunks.append(data)
                         self.lastGeneratedAudio = (text, self.activeGeneratedChunks, false)
                     }
-                    self.setStatus(.playing(provider.displayName))
-                    self.playThen(data) { [weak self] in self?.drainNext() }
+                    self.cloudAudioQueue.append(data)
+                    self.playNextCloudChunkIfNeeded()
+                    self.synthesizeNextCloudChunkIfNeeded()
                 }
             } catch {
                 NSLog("Dob · \(provider.displayName) 失败，回退本地语音：\(error)")
                 guard let self else { return }
                 await MainActor.run {
                     guard self.playbackGeneration == self.activeCloudGeneration else { return }
+                    self.cloudSynthesizing = false
                     let remaining = ([next] + self.cloudQueue).joined(separator: "\n")
                     self.cloudQueue.removeAll()
+                    self.cloudAudioQueue.removeAll()
                     self.cloudDraining = false
                     self.activeCloudProvider = nil
+                    self.player?.stop()
+                    self.player = nil
                     self.lastGeneratedAudio = nil
                     self.localSpeak(remaining)
                 }
             }
         }
+    }
+
+    private func playNextCloudChunkIfNeeded() {
+        guard playbackGeneration == activeCloudGeneration else { return }
+        guard player == nil, !isPaused else { return }
+        guard !cloudAudioQueue.isEmpty else {
+            finishCloudPipelineIfPossible()
+            return
+        }
+        let data = cloudAudioQueue.removeFirst()
+        let label = activeCloudProvider?.displayName ?? AppFlavor.text("云语音", "Cloud Speech")
+        setStatus(.playing(label))
+        playThen(data) { [weak self] in
+            self?.playNextCloudChunkIfNeeded()
+        }
+    }
+
+    private func finishCloudPipelineIfPossible() {
+        guard player == nil, cloudAudioQueue.isEmpty else { return }
+        if cloudSynthesizing {
+            if let label = activeCloudProvider?.displayName, !isPaused {
+                setStatus(.preparing(label))
+            }
+            return
+        }
+        if !cloudQueue.isEmpty {
+            synthesizeNextCloudChunkIfNeeded()
+            if let label = activeCloudProvider?.displayName, !isPaused {
+                setStatus(.preparing(label))
+            }
+            return
+        }
+        guard !streaming else { return }
+        cloudDraining = false
+        if let text = activeCacheText {
+            lastGeneratedAudio = (text, activeGeneratedChunks, true)
+        }
+        activeCloudProvider = nil
+        activeCacheText = nil
+        setStatus(.idle)
     }
 
     private func playSequence(_ chunks: [Data], _ done: @escaping () -> Void) {
@@ -285,6 +332,7 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
         !synth.isPaused &&
         player == nil &&
         activeCloudProvider == nil &&
+        !cloudSynthesizing &&
         !cloudDraining &&
         cloudQueue.isEmpty
     }
