@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panelDismissAnchor: NSPoint?
     private var panelShownAt = Date.distantPast
     private var panelIsFadingOut = false
+    private let panelAutoDismissDistance: CGFloat = 180
+    private let panelAutoDismissInitialGrace: TimeInterval = 0.45
+    private let panelAutoDismissDelay: TimeInterval = 0.36
     private var mouseUpMonitor: Any?
     private weak var triggerMenuItem: NSMenuItem?
     private var autoPopMouseDownLocation: NSPoint?
@@ -598,13 +601,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
-        if Date().timeIntervalSince(panelShownAt) < 0.25 {
+        if Date().timeIntervalSince(panelShownAt) < panelAutoDismissInitialGrace {
             return
         }
 
         let anchor = panelDismissAnchor ?? point
         panelDismissAnchor = anchor
-        guard distance(from: anchor, to: point) > 88 else {
+        guard distance(from: anchor, to: point) > panelAutoDismissDistance else {
             cancelPanelAutoDismiss()
             return
         }
@@ -613,7 +616,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private var panelSafeFrame: NSRect {
-        panel.frame.insetBy(dx: -14, dy: -14)
+        let panelFrame = panel.frame.insetBy(dx: -34, dy: -30)
+        let menuFrame = NSRect(x: panel.frame.maxX - 300,
+                               y: panel.frame.minY - 520,
+                               width: 620,
+                               height: 560)
+        return panelFrame.union(menuFrame)
     }
 
     private func schedulePanelAutoDismiss() {
@@ -629,7 +637,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.fadeOutPanel()
         }
         panelDismissWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + panelAutoDismissDelay, execute: item)
     }
 
     private var isPanelAutoDismissStillValid: Bool {

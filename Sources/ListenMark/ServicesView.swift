@@ -6,9 +6,9 @@ struct ServicesView: View {
         URL(string: AppFlavor.text("https://www.volcengine.com/docs/6561/1257544?lang=zh",
                                    "https://www.volcengine.com/docs/6561/1257544"))!
     }
-    private static let microsoftSpeechDocsURL = URL(string: "https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech")!
-    private static let googleSpeechDocsURL = URL(string: "https://cloud.google.com/text-to-speech/docs")!
-    private static let tencentSpeechDocsURL = URL(string: "https://cloud.tencent.com/document/product/1073")!
+    private static let microsoftSpeechDocsURL = URL(string: "https://learn.microsoft.com/azure/ai-services/speech-service/language-support")!
+    private static let googleSpeechDocsURL = URL(string: "https://cloud.google.com/text-to-speech/docs/list-voices-and-types")!
+    private static let tencentSpeechDocsURL = URL(string: "https://cloud.tencent.com/document/product/1073/92668")!
 
     private enum Category: String, CaseIterable, Identifiable, Hashable {
         case text
@@ -45,9 +45,16 @@ struct ServicesView: View {
         case tencentSpeech
     }
 
+    private struct ServiceTestResult: Equatable {
+        var succeeded: Bool
+        var message: String
+    }
+
     @State private var category: Category = .text
     @State private var selection: Selection = .defaultModel
     @State private var llmProviders: [LLMServiceProvider] = Settings.llmServiceProviders
+    @State private var testingServices = Set<String>()
+    @State private var serviceTestResults: [String: ServiceTestResult] = [:]
 
     @AppStorage("llmBaseURL") private var llmBaseURL = Settings.recommendedLLMBaseURL
     @AppStorage("deepseekKey") private var llmAPIKey = ""
@@ -294,6 +301,18 @@ struct ServicesView: View {
                 SecureField(AppFlavor.text("API Key（Bearer Token）", "API Key (Bearer token)"), text: $llmAPIKey)
                 TextField(AppFlavor.text("模型名", "Model"), text: $llmModel)
             }
+            connectionTestRow(key: "llm-default",
+                              title: AppFlavor.text("检测连接", "Test Connection"),
+                              disabled: !isLLMConfigReady(baseURL: llmBaseURL, apiKey: llmAPIKey, model: llmModel)) {
+                testLLMConnection(
+                    key: "llm-default",
+                    provider: LLMProviderConfig(id: "default-test",
+                                                label: AppFlavor.text("默认模型", "Default Model"),
+                                                baseURL: llmBaseURL,
+                                                apiKey: llmAPIKey,
+                                                model: llmModel)
+                )
+            }
             HStack {
                 Link(AppFlavor.text("前往 DeepSeek 获取 API Key ↗", "Get a DeepSeek API Key ↗"),
                      destination: URL(string: "https://platform.deepseek.com/api_keys")!)
@@ -342,6 +361,11 @@ struct ServicesView: View {
                     TextField(AppFlavor.text("Base URL", "Base URL"), text: providerStringBinding(id: id, keyPath: \.baseURL))
                     SecureField(AppFlavor.text("API Key（Bearer Token）", "API Key (Bearer token)"), text: providerStringBinding(id: id, keyPath: \.apiKey))
                     TextField(AppFlavor.text("模型名", "Model"), text: providerStringBinding(id: id, keyPath: \.model))
+                }
+                connectionTestRow(key: "llm-\(id)",
+                                  title: AppFlavor.text("检测连接", "Test Connection"),
+                                  disabled: !provider.isConfigured) {
+                    testLLMConnection(key: "llm-\(id)", provider: provider.runtimeConfig)
                 }
                 HStack {
                     if let preset = LLMServicePresets.all.first(where: { $0.id == provider.presetID }), let url = preset.keyURL {
@@ -445,6 +469,11 @@ struct ServicesView: View {
                         .frame(width: 44, alignment: .trailing)
                 }
             }
+            connectionTestRow(key: "tts-volcano",
+                              title: AppFlavor.text("检测接口", "Test API"),
+                              disabled: !volcanoConfigured) {
+                testSpeechConnection(key: "tts-volcano", provider: .volcano)
+            }
             HStack {
                 Link(AppFlavor.text("火山语音控制台 ↗", "Volcengine speech console ↗"),
                      destination: URL(string: "https://console.volcengine.com/speech/app")!)
@@ -484,11 +513,24 @@ struct ServicesView: View {
                 SecureField("Key", text: $microsoftTTSKey)
                 TextField(AppFlavor.text("Region 或 Endpoint，例如 eastasia", "Region or endpoint, e.g. eastasia"),
                           text: $microsoftTTSRegion)
+                Picker(AppFlavor.text("常用音色", "Common voice"), selection: $microsoftTTSVoice) {
+                    ForEach(MicrosoftVoices.all) { voice in
+                        Text(voice.displayName).tag(voice.id)
+                    }
+                    if !MicrosoftVoices.all.contains(where: { $0.id == microsoftTTSVoice }) {
+                        Text(AppFlavor.text("自定义（\(microsoftTTSVoice)）", "Custom (\(microsoftTTSVoice))")).tag(microsoftTTSVoice)
+                    }
+                }
                 TextField(AppFlavor.text("Voice，例如 zh-CN-XiaoxiaoNeural", "Voice, e.g. en-US-JennyNeural"),
                           text: $microsoftTTSVoice)
             }
+            connectionTestRow(key: "tts-microsoft",
+                              title: AppFlavor.text("检测接口", "Test API"),
+                              disabled: !microsoftConfigured) {
+                testSpeechConnection(key: "tts-microsoft", provider: .microsoft)
+            }
             HStack {
-                Link(AppFlavor.text("查看官方文档 ↗", "Open docs ↗"), destination: Self.microsoftSpeechDocsURL)
+                Link(AppFlavor.text("官方音色列表 ↗", "Official voice list ↗"), destination: Self.microsoftSpeechDocsURL)
                     .font(.caption)
                 Spacer()
                 Button(AppFlavor.text("试听", "Test Voice")) {
@@ -520,6 +562,14 @@ struct ServicesView: View {
             .disabled(ttsEngine == "google" || !googleConfigured)
             serviceFields {
                 SecureField(AppFlavor.text("API Key 或 Bearer Token", "API key or Bearer token"), text: $googleTTSKey)
+                Picker(AppFlavor.text("常用音色", "Common voice"), selection: $googleTTSVoice) {
+                    ForEach(GoogleVoices.all) { voice in
+                        Text(voice.displayName).tag(voice.id)
+                    }
+                    if !GoogleVoices.all.contains(where: { $0.id == googleTTSVoice }) {
+                        Text(AppFlavor.text("自定义（\(googleTTSVoice)）", "Custom (\(googleTTSVoice))")).tag(googleTTSVoice)
+                    }
+                }
                 TextField(AppFlavor.text("Voice，例如 cmn-CN-Standard-A", "Voice, e.g. en-US-Neural2-F"),
                           text: $googleTTSVoice)
                 HStack {
@@ -530,8 +580,13 @@ struct ServicesView: View {
                         .frame(width: 54, alignment: .trailing)
                 }
             }
+            connectionTestRow(key: "tts-google",
+                              title: AppFlavor.text("检测接口", "Test API"),
+                              disabled: !googleConfigured) {
+                testSpeechConnection(key: "tts-google", provider: .google)
+            }
             HStack {
-                Link(AppFlavor.text("查看官方文档 ↗", "Open docs ↗"), destination: Self.googleSpeechDocsURL)
+                Link(AppFlavor.text("官方音色列表 ↗", "Official voice list ↗"), destination: Self.googleSpeechDocsURL)
                     .font(.caption)
                 Spacer()
                 Button(AppFlavor.text("试听", "Test Voice")) {
@@ -566,6 +621,14 @@ struct ServicesView: View {
                 SecureField("SecretKey", text: $tencentTTSSecretKey)
                 TextField("Host", text: $tencentTTSHost)
                 TextField(AppFlavor.text("Region，例如 ap-guangzhou", "Region, e.g. ap-guangzhou"), text: $tencentTTSRegion)
+                Picker(AppFlavor.text("常用音色", "Common voice"), selection: $tencentTTSVoice) {
+                    ForEach(TencentVoices.all) { voice in
+                        Text(voice.displayName).tag(voice.id)
+                    }
+                    if !TencentVoices.all.contains(where: { $0.id == tencentTTSVoice }) {
+                        Text(AppFlavor.text("自定义（\(tencentTTSVoice)）", "Custom (\(tencentTTSVoice))")).tag(tencentTTSVoice)
+                    }
+                }
                 TextField(AppFlavor.text("VoiceType，例如 1001", "VoiceType, e.g. 1050"),
                           text: $tencentTTSVoice)
                 HStack {
@@ -576,8 +639,13 @@ struct ServicesView: View {
                         .frame(width: 42, alignment: .trailing)
                 }
             }
+            connectionTestRow(key: "tts-tencent",
+                              title: AppFlavor.text("检测接口", "Test API"),
+                              disabled: !tencentConfigured) {
+                testSpeechConnection(key: "tts-tencent", provider: .tencent)
+            }
             HStack {
-                Link(AppFlavor.text("查看官方文档 ↗", "Open docs ↗"), destination: Self.tencentSpeechDocsURL)
+                Link(AppFlavor.text("官方音色列表 ↗", "Official voice list ↗"), destination: Self.tencentSpeechDocsURL)
                     .font(.caption)
                 Spacer()
                 Button(AppFlavor.text("试听", "Test Voice")) {
@@ -768,6 +836,131 @@ struct ServicesView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func connectionTestRow(key: String,
+                                   title: String,
+                                   disabled: Bool,
+                                   action: @escaping () -> Void) -> some View {
+        let isTesting = testingServices.contains(key)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button {
+                    action()
+                } label: {
+                    if isTesting {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(AppFlavor.text("检测中", "Testing"))
+                        }
+                    } else {
+                        Label(title, systemImage: "checkmark.seal")
+                    }
+                }
+                .disabled(disabled || isTesting)
+                if disabled {
+                    Text(AppFlavor.text("填完整后可检测", "Complete fields to test"))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+            }
+            if let result = serviceTestResults[key] {
+                Label(result.message, systemImage: result.succeeded ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    .font(.caption)
+                    .foregroundStyle(result.succeeded ? Color.green : Color.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.028)))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+        }
+    }
+
+    private func isLLMConfigReady(baseURL: String, apiKey: String, model: String) -> Bool {
+        !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func testLLMConnection(key: String, provider: LLMProviderConfig) {
+        testingServices.insert(key)
+        serviceTestResults[key] = nil
+        Task {
+            let result: ServiceTestResult
+            do {
+                let response = try await LLMClient.testConnection(provider: provider)
+                let clean = response.trimmingCharacters(in: .whitespacesAndNewlines)
+                let message: String
+                if clean.uppercased().contains("OK") {
+                    message = AppFlavor.text("连接成功，模型已响应。", "Connection succeeded. The model responded.")
+                } else {
+                    message = AppFlavor.text("连接成功，返回：\(String(clean.prefix(60)))",
+                                             "Connection succeeded. Response: \(String(clean.prefix(60)))")
+                }
+                result = ServiceTestResult(succeeded: true, message: message)
+            } catch {
+                result = ServiceTestResult(succeeded: false, message: describeServiceTestError(error))
+            }
+            await MainActor.run {
+                serviceTestResults[key] = result
+                testingServices.remove(key)
+            }
+        }
+    }
+
+    private func testSpeechConnection(key: String, provider: CloudTTSProvider) {
+        testingServices.insert(key)
+        serviceTestResults[key] = nil
+        Task {
+            let result: ServiceTestResult
+            do {
+                let sample = AppFlavor.text("过耳不忘接口检测。", "ListenMark API test.")
+                let data = try await provider.synthesize(sample)
+                guard !data.isEmpty else { throw CloudTTSError.noAudio(provider.displayName) }
+                let size = ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
+                result = ServiceTestResult(
+                    succeeded: true,
+                    message: AppFlavor.text("接口可用，已收到音频数据（\(size)）。",
+                                            "API is available. Audio data received (\(size)).")
+                )
+            } catch {
+                result = ServiceTestResult(succeeded: false, message: describeServiceTestError(error))
+            }
+            await MainActor.run {
+                serviceTestResults[key] = result
+                testingServices.remove(key)
+            }
+        }
+    }
+
+    private func describeServiceTestError(_ error: Error) -> String {
+        let message: String
+        if let llm = error as? LLMError {
+            message = llm.description
+        } else if let cloud = error as? CloudTTSError {
+            message = cloud.description
+        } else if let volcano = error as? VolcanoTTSError {
+            switch volcano {
+            case .notConfigured:
+                message = AppFlavor.text("火山引擎配置不完整", "Volcengine configuration is incomplete")
+            case .http(let code, let body):
+                let clean = body.trimmingCharacters(in: .whitespacesAndNewlines)
+                message = "HTTP \(code): \(clean.isEmpty ? AppFlavor.text("无错误详情", "No error detail") : clean)"
+            case .api(let code, let body):
+                message = "API \(code): \(body)"
+            case .noAudio:
+                message = AppFlavor.text("服务没有返回音频数据", "The service returned no audio data")
+            }
+        } else {
+            message = error.localizedDescription
+        }
+        let clean = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        return String((clean.isEmpty ? String(describing: error) : clean).prefix(260))
     }
 
     private var selectedLLMProviderID: String? {

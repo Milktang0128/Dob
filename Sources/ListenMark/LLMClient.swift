@@ -1,10 +1,27 @@
 import Foundation
 
-enum LLMError: Error {
+enum LLMError: Error, CustomStringConvertible, LocalizedError {
     case noKey
     case badURL
     case http(Int, String)
     case badResponse
+
+    var description: String {
+        switch self {
+        case .noKey:
+            return AppFlavor.text("缺少 API Key", "API key is missing")
+        case .badURL:
+            return AppFlavor.text("Base URL 无效", "Base URL is invalid")
+        case .http(let code, let body):
+            let clean = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            let message = clean.isEmpty ? AppFlavor.text("服务没有返回错误详情", "The service returned no error detail") : String(clean.prefix(260))
+            return "HTTP \(code): \(message)"
+        case .badResponse:
+            return AppFlavor.text("响应格式无法解析", "Response could not be parsed")
+        }
+    }
+
+    var errorDescription: String? { description }
 }
 
 /// Text actions via an OpenAI-compatible Chat Completions API.
@@ -35,6 +52,17 @@ enum LLMClient {
             let content = message["content"] as? String
         else { throw LLMError.badResponse }
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func testConnection(provider: LLMProviderConfig) async throws -> String {
+        let response = try await complete(
+            prompt: AppFlavor.text("你是 API 连通性检测器。只回复 OK 两个字母，不要解释。",
+                                   "You are an API connectivity checker. Reply with only OK, no explanation."),
+            text: "ping",
+            provider: provider
+        )
+        guard !response.isEmpty else { throw LLMError.badResponse }
+        return response
     }
 
     /// Streaming variant — yields text deltas as they arrive (SSE).

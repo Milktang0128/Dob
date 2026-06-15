@@ -5,6 +5,22 @@ struct VolcanoVoice: Identifiable {
     let name: String
 }
 
+struct TTSVoicePreset: Identifiable {
+    let id: String
+    let name: String
+    let note: String
+
+    init(id: String, name: String, note: String = "") {
+        self.id = id
+        self.name = name
+        self.note = note
+    }
+
+    var displayName: String {
+        note.isEmpty ? name : "\(name) · \(note)"
+    }
+}
+
 /// 豆包语音合成模型 2.0（_uranus_bigtts）常用音色，节选自官方音色列表（2026.05）。
 /// 账号需在火山控制台开通对应音色；也可在设置里手填任意 voice_type。
 enum VolcanoVoices {
@@ -28,6 +44,61 @@ enum VolcanoVoices {
         .init(id: "zh_female_yingyujiaoxue_uranus_bigtts", name: AppFlavor.text("Tina 老师 · 中英", "Tina · Chinese and English")),
         .init(id: "en_male_tim_uranus_bigtts", name: AppFlavor.text("Tim · 美式英语", "Tim · American English")),
         .init(id: "en_female_dacey_uranus_bigtts", name: AppFlavor.text("Dacey · 美式英语", "Dacey · American English"))
+    ]
+}
+
+/// Common Azure AI Speech voices verified against Microsoft Learn language and
+/// voice support docs. The text field still accepts any official voice name.
+enum MicrosoftVoices {
+    static let all: [TTSVoicePreset] = [
+        .init(id: "zh-CN-XiaoxiaoNeural", name: AppFlavor.text("晓晓 · 普通话女声", "Xiaoxiao · Mandarin female"), note: AppFlavor.text("通用/助手", "general")),
+        .init(id: "zh-CN-XiaoyiNeural", name: AppFlavor.text("晓伊 · 普通话女声", "Xiaoyi · Mandarin female"), note: AppFlavor.text("亲和", "friendly")),
+        .init(id: "zh-CN-XiaochenNeural", name: AppFlavor.text("晓辰 · 普通话女声", "Xiaochen · Mandarin female"), note: AppFlavor.text("直播/商业", "commercial")),
+        .init(id: "zh-CN-YunxiNeural", name: AppFlavor.text("云希 · 普通话男声", "Yunxi · Mandarin male"), note: AppFlavor.text("聊天/旁白", "chat")),
+        .init(id: "zh-CN-YunjianNeural", name: AppFlavor.text("云健 · 普通话男声", "Yunjian · Mandarin male"), note: AppFlavor.text("纪录片/体育", "documentary")),
+        .init(id: "zh-CN-YunyangNeural", name: AppFlavor.text("云扬 · 普通话男声", "Yunyang · Mandarin male"), note: AppFlavor.text("新闻/客服", "news")),
+        .init(id: "zh-HK-HiuMaanNeural", name: AppFlavor.text("晓曼 · 粤语女声", "HiuMaan · Cantonese female"), note: "zh-HK"),
+        .init(id: "zh-HK-WanLungNeural", name: AppFlavor.text("云龙 · 粤语男声", "WanLung · Cantonese male"), note: "zh-HK"),
+        .init(id: "zh-TW-HsiaoChenNeural", name: AppFlavor.text("晓臻 · 台湾女声", "HsiaoChen · Taiwan female"), note: "zh-TW"),
+        .init(id: "zh-TW-YunJheNeural", name: AppFlavor.text("云哲 · 台湾男声", "YunJhe · Taiwan male"), note: "zh-TW"),
+        .init(id: "en-US-JennyNeural", name: "Jenny · English female", note: "en-US"),
+        .init(id: "en-US-GuyNeural", name: "Guy · English male", note: "en-US")
+    ]
+}
+
+/// Common Google Cloud Text-to-Speech voices verified against the supported
+/// voices page. API availability can still depend on project permissions.
+enum GoogleVoices {
+    static let all: [TTSVoicePreset] = [
+        .init(id: "cmn-CN-Chirp3-HD-Achernar", name: AppFlavor.text("Achernar · 普通话女声", "Achernar · Mandarin female"), note: "Chirp3 HD"),
+        .init(id: "cmn-CN-Chirp3-HD-Aoede", name: AppFlavor.text("Aoede · 普通话女声", "Aoede · Mandarin female"), note: "Chirp3 HD"),
+        .init(id: "cmn-CN-Chirp3-HD-Achird", name: AppFlavor.text("Achird · 普通话男声", "Achird · Mandarin male"), note: "Chirp3 HD"),
+        .init(id: "cmn-CN-Chirp3-HD-Algenib", name: AppFlavor.text("Algenib · 普通话男声", "Algenib · Mandarin male"), note: "Chirp3 HD"),
+        .init(id: "cmn-CN-Standard-A", name: AppFlavor.text("Standard A · 普通话女声", "Standard A · Mandarin female"), note: AppFlavor.text("兼容", "standard")),
+        .init(id: "cmn-CN-Standard-B", name: AppFlavor.text("Standard B · 普通话男声", "Standard B · Mandarin male"), note: AppFlavor.text("兼容", "standard")),
+        .init(id: "cmn-CN-Wavenet-A", name: AppFlavor.text("Wavenet A · 普通话女声", "Wavenet A · Mandarin female"), note: "Wavenet"),
+        .init(id: "cmn-CN-Wavenet-B", name: AppFlavor.text("Wavenet B · 普通话男声", "Wavenet B · Mandarin male"), note: "Wavenet"),
+        .init(id: "en-US-Neural2-F", name: "Neural2 F · English female", note: "en-US"),
+        .init(id: "en-US-Neural2-J", name: "Neural2 J · English male", note: "en-US")
+    ]
+}
+
+/// Common Tencent Cloud TTS VoiceType presets verified against the official
+/// voice list for realtime/basic/long-form synthesis.
+enum TencentVoices {
+    static let all: [TTSVoicePreset] = [
+        .init(id: "502001", name: AppFlavor.text("智小柔 · 聊天女声", "Zhixiaorou · female"), note: AppFlavor.text("中英文", "zh/en")),
+        .init(id: "502003", name: AppFlavor.text("智小敏 · 聊天女声", "Zhixiaomin · female"), note: AppFlavor.text("中英文", "zh/en")),
+        .init(id: "502005", name: AppFlavor.text("智小解 · 解说男声", "Zhixiaojie · narrator"), note: AppFlavor.text("中英文", "zh/en")),
+        .init(id: "502006", name: AppFlavor.text("智小悟 · 聊天男声", "Zhixiaowu · male"), note: AppFlavor.text("中英文", "zh/en")),
+        .init(id: "502007", name: AppFlavor.text("智小虎 · 聊天童声", "Zhixiaohu · child"), note: AppFlavor.text("中英文", "zh/en")),
+        .init(id: "602004", name: AppFlavor.text("暖心阿灿 · 聊天男声", "Acan · male"), note: AppFlavor.text("中英文", "zh/en")),
+        .init(id: "602005", name: AppFlavor.text("专业梓欣 · 聊天女声", "Zixin · female"), note: AppFlavor.text("中英文", "zh/en")),
+        .init(id: "501000", name: AppFlavor.text("智斌 · 阅读男声", "Zhibin · reading male"), note: AppFlavor.text("长文本", "long-form")),
+        .init(id: "501001", name: AppFlavor.text("智兰 · 资讯女声", "Zhilan · news female"), note: AppFlavor.text("长文本", "long-form")),
+        .init(id: "501002", name: AppFlavor.text("智菊 · 阅读女声", "Zhiju · reading female"), note: AppFlavor.text("长文本", "long-form")),
+        .init(id: "501008", name: "WeJames · English male", note: AppFlavor.text("长文本英文", "long-form en")),
+        .init(id: "501009", name: "WeWinny · English female", note: AppFlavor.text("长文本英文", "long-form en"))
     ]
 }
 
