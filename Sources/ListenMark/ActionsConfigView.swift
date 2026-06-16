@@ -16,6 +16,28 @@ struct ActionsConfigView: View {
     }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            listBody
+        }
+        .frame(minWidth: 480, minHeight: 520)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(AppFlavor.text("技能", "Actions"))
+                .font(.system(size: 24, weight: .semibold))
+            Text(AppFlavor.text("管理工具条技能：拖动排序、开关启用、编辑提示词，并可添加自定义技能。",
+                                "Manage panel actions: reorder, toggle, edit prompts, and add your own."))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var listBody: some View {
         List {
             Section {
                 ForEach(store.actions) { def in
@@ -51,7 +73,6 @@ struct ActionsConfigView: View {
             }
         }
         .listStyle(.inset)
-        .frame(minWidth: 480, minHeight: 520)
 	        .sheet(item: $editing) { target in
 	            ActionEditor(target: target,
                              initialProviderID: Settings.actionLLMProviderID(for: target.def.id) ?? Settings.defaultLLMProvider.id,
