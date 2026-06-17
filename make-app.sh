@@ -7,8 +7,8 @@ cd "$(dirname "$0")"
 swift build -c release
 
 FLAVOR="${FLAVOR:-zh}"
-VERSION="${VERSION:-0.3.4}"
-BUILD="${BUILD:-34}"
+VERSION="${VERSION:-0.3.5}"
+BUILD="${BUILD:-35}"
 TIMESTAMP_URL="${TIMESTAMP_URL:-http://timestamp.apple.com/ts01}"
 if [ "$FLAVOR" = "en" ] || [ "$FLAVOR" = "international" ]; then
   APP="Dob International.app"

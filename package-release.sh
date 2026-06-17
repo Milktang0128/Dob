@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-VERSION="${VERSION:-0.3.4}"
-BUILD="${BUILD:-34}"
+VERSION="${VERSION:-0.3.5}"
+BUILD="${BUILD:-35}"
 ARCH="${ARCH:-arm64}"
 IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Zhi Tang (LB8ZBRDP63)}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-myskills-notary}"
@@ -91,6 +91,10 @@ package_one() {
 
 mkdir -p release
 package_one zh
-package_one international
+# International flavor retired (v0.3.5+): the single Dob build now adapts its
+# UI language at runtime (AppFlavor.uiLanguageIsEnglish), so there is no longer
+# a separate English build to publish. Re-enable if a distinct bundle id /
+# update channel is ever needed again.
+# package_one international
 
 echo "✅ Packaged ${VERSION}"
