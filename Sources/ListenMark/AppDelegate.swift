@@ -73,9 +73,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let app = NSWorkspace.shared.frontmostApplication, !isBuiltInAutoPopProtected(app) {
             enableAX(app.processIdentifier)
         }
-        if Settings.onboardingCompletedBuild == 0 {
+        if Settings.onboardingCompletedBuild == 0 && !SelectionGrabber.isTrusted {
+            // Brand-new user: Accessibility was never granted, so run the first-run wizard.
             openOnboarding()
         } else {
+            // Existing user upgrading from a pre-onboarding build: Accessibility is already
+            // granted (they've used Dob before), so silently mark onboarding as seen instead
+            // of greeting them with a setup wizard they don't need.
+            if Settings.onboardingCompletedBuild == 0 {
+                Settings.onboardingCompletedBuild = OnboardingModel.currentBuild
+            }
             checkTrust()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
