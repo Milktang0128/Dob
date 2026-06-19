@@ -372,9 +372,6 @@ private struct GitHubRelease: Decodable {
 
     var isUsableForCurrentFlavor: Bool {
         guard !draft else { return false }
-        if AppFlavor.isInternational {
-            return tagName.hasPrefix(AppFlavor.releaseTagPrefix)
-        }
         return !prerelease && tagName.hasPrefix(AppFlavor.releaseTagPrefix)
     }
 
@@ -399,9 +396,6 @@ private struct GitHubAsset: Decodable {
     var isDMGForCurrentFlavor: Bool {
         let normalized = name.lowercased()
         guard normalized.hasSuffix(".dmg") else { return false }
-        if AppFlavor.isInternational {
-            return normalized.contains("international")
-        }
         return !normalized.contains("international")
     }
 }

@@ -1,22 +1,21 @@
 import Foundation
 
 enum AppFlavor {
-    // MARK: Build flavor (fixed at build time — distribution identity, NOT UI language)
+    // MARK: Build stamp & distribution identity (single unified build)
 
+    /// The LMAppFlavor stamp baked into Info.plist — always "zh" now. Kept only
+    /// so the in-app updater can verify a downloaded bundle carries the expected
+    /// stamp (see GitHubReleaseUpdater.validateCandidateApp); already-shipped
+    /// users' updaters require future builds to keep stamping "zh".
     static var rawValue: String {
         Bundle.main.object(forInfoDictionaryKey: "LMAppFlavor") as? String ?? "zh"
     }
 
-    /// The legacy international BUILD. Drives bundle id / update channel only —
-    /// NOT the interface language. Kept so the GitHub updater stays correct.
-    static var isInternational: Bool { rawValue == "international" }
-
-    // Bridge release: keep the old bundle identifiers and support folders so
-    // existing users retain Accessibility permission, settings, and archives.
-    static var bundleIdentifier: String { isInternational ? "com.listenmark.international" : "com.listenmark.app" }
-    static var supportFolderName: String { isInternational ? "ListenMark International" : "ListenMark" }
-    static var releaseTagPrefix: String { isInternational ? "listenmark-v" : "v" }
-    static var usesPrereleaseUpdateChannel: Bool { isInternational }
+    // One bundle id / support folder / release-tag prefix. (The retired
+    // "international" build had its own identity; it is no longer produced.)
+    static var bundleIdentifier: String { "com.listenmark.app" }
+    static var supportFolderName: String { "ListenMark" }
+    static var releaseTagPrefix: String { "v" }
 
     // MARK: Branding (unified — one name regardless of build or language)
 

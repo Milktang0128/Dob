@@ -6,23 +6,16 @@ cd "$(dirname "$0")"
 
 swift build -c release
 
-FLAVOR="${FLAVOR:-zh}"
 VERSION="${VERSION:-0.3.5}"
 BUILD="${BUILD:-35}"
 TIMESTAMP_URL="${TIMESTAMP_URL:-http://timestamp.apple.com/ts01}"
-if [ "$FLAVOR" = "en" ] || [ "$FLAVOR" = "international" ]; then
-  APP="Dob International.app"
-  BUNDLE_NAME="Dob International"
-  BUNDLE_DISPLAY_NAME="Dob International"
-  BUNDLE_ID="com.listenmark.international"
-  APP_FLAVOR="international"
-else
-  APP="Dob.app"
-  BUNDLE_NAME="Dob"
-  BUNDLE_DISPLAY_NAME="Dob"
-  BUNDLE_ID="com.listenmark.app"
-  APP_FLAVOR="zh"
-fi
+# Single unified build. LMAppFlavor stays "zh" so the in-app updater's
+# bundle-flavor self-check keeps matching for already-shipped users.
+APP="Dob.app"
+BUNDLE_NAME="Dob"
+BUNDLE_DISPLAY_NAME="Dob"
+BUNDLE_ID="com.listenmark.app"
+APP_FLAVOR="zh"
 BIN=".build/release/ListenMark"
 
 codesign_with_timestamp() {
