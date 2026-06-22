@@ -61,7 +61,7 @@ final class OnboardingModel: ObservableObject {
 
 struct OnboardingView: View {
     @ObservedObject var model: OnboardingModel
-    @AppStorage("deepseekKey") private var apiKey = ""
+    @State private var apiKey = Settings.llmAPIKey   // Keychain-backed
 
     var body: some View {
         VStack(spacing: 0) {
@@ -152,6 +152,7 @@ struct OnboardingView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 SecureField("sk-…", text: $apiKey)
                     .textFieldStyle(.roundedBorder)
+                    .onChange(of: apiKey) { _, v in Settings.llmAPIKey = v }
                 HStack(spacing: 14) {
                     Link(AppFlavor.text("前往获取 DeepSeek Key ↗", "Get a DeepSeek key ↗"),
                          destination: URL(string: "https://platform.deepseek.com/api_keys")!)

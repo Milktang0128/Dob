@@ -47,8 +47,8 @@ enum Settings {
     }
 
     static var llmAPIKey: String {
-        get { d.string(forKey: "deepseekKey") ?? "" }
-        set { d.set(newValue, forKey: "deepseekKey") }
+        get { KeychainStore.get("deepseekKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "deepseekKey") }
     }
 
     static var llmModel: String {
@@ -79,21 +79,38 @@ enum Settings {
         compareProviders(baseline: defaultLLMProvider)
     }
 
+    /// Keychain account for a provider's API key (kept out of the JSON blob).
+    private static func providerKeychainKey(_ id: String) -> String { "llmprovider.\(id).apiKey" }
+
+    /// Remove a provider's stored API key — call when a provider is deleted.
+    static func deleteProviderSecret(_ id: String) {
+        KeychainStore.delete(providerKeychainKey(id))
+    }
+
     static var llmServiceProviders: [LLMServiceProvider] {
         get {
             if let data = d.data(forKey: llmServiceProvidersKey),
-               let providers = try? JSONDecoder().decode([LLMServiceProvider].self, from: data) {
+               var providers = try? JSONDecoder().decode([LLMServiceProvider].self, from: data) {
+                for i in providers.indices {
+                    if let key = KeychainStore.get(providerKeychainKey(providers[i].id)) {
+                        providers[i].apiKey = key
+                    }
+                }
                 return providers
             }
             let migrated = legacyCompareProviders()
             if !migrated.isEmpty {
-                let data = try? JSONEncoder().encode(migrated)
-                d.set(data, forKey: llmServiceProvidersKey)
+                llmServiceProviders = migrated   // setter stores keys in Keychain + blanks the JSON
             }
             return migrated
         }
         set {
-            let data = try? JSONEncoder().encode(newValue)
+            var sanitized = newValue
+            for i in sanitized.indices {
+                KeychainStore.set(sanitized[i].apiKey, key: providerKeychainKey(sanitized[i].id))
+                sanitized[i].apiKey = ""   // never persist the key in plaintext JSON
+            }
+            let data = try? JSONEncoder().encode(sanitized)
             d.set(data, forKey: llmServiceProvidersKey)
         }
     }
@@ -230,8 +247,8 @@ enum Settings {
     }
 
     static var compareProvider1APIKey: String {
-        get { d.string(forKey: "compareProvider1APIKey") ?? "" }
-        set { d.set(newValue, forKey: "compareProvider1APIKey") }
+        get { KeychainStore.get("compareProvider1APIKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "compareProvider1APIKey") }
     }
 
     static var compareProvider1Model: String {
@@ -258,8 +275,8 @@ enum Settings {
     }
 
     static var compareProvider2APIKey: String {
-        get { d.string(forKey: "compareProvider2APIKey") ?? "" }
-        set { d.set(newValue, forKey: "compareProvider2APIKey") }
+        get { KeychainStore.get("compareProvider2APIKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "compareProvider2APIKey") }
     }
 
     static var compareProvider2Model: String {
@@ -284,8 +301,8 @@ enum Settings {
     }
 
     static var volcToken: String {
-        get { d.string(forKey: "volcToken") ?? "" }
-        set { d.set(newValue, forKey: "volcToken") }
+        get { KeychainStore.get("volcToken") ?? "" }
+        set { KeychainStore.set(newValue, key: "volcToken") }
     }
 
     static var volcCluster: String {
@@ -312,8 +329,8 @@ enum Settings {
     static var volcConfigured: Bool { !volcAppId.isEmpty && !volcToken.isEmpty }
 
     static var microsoftTTSKey: String {
-        get { d.string(forKey: "microsoftTTSKey") ?? "" }
-        set { d.set(newValue, forKey: "microsoftTTSKey") }
+        get { KeychainStore.get("microsoftTTSKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "microsoftTTSKey") }
     }
 
     static var microsoftTTSRegion: String {
@@ -337,8 +354,8 @@ enum Settings {
     }
 
     static var googleTTSKey: String {
-        get { d.string(forKey: "googleTTSKey") ?? "" }
-        set { d.set(newValue, forKey: "googleTTSKey") }
+        get { KeychainStore.get("googleTTSKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "googleTTSKey") }
     }
 
     static var googleTTSVoice: String {
@@ -364,8 +381,8 @@ enum Settings {
     }
 
     static var tencentTTSSecretKey: String {
-        get { d.string(forKey: "tencentTTSSecretKey") ?? "" }
-        set { d.set(newValue, forKey: "tencentTTSSecretKey") }
+        get { KeychainStore.get("tencentTTSSecretKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "tencentTTSSecretKey") }
     }
 
     static var tencentTTSHost: String {
@@ -557,6 +574,43 @@ enum Settings {
     static var lastActionID: String {
         get { d.string(forKey: "lastActionID") ?? "" }
         set { d.set(newValue, forKey: "lastActionID") }
+    }
+
+    // MARK: Keychain migration
+
+    /// One-time migration of credentials previously stored as plaintext in
+    /// UserDefaults into the Keychain — both the standalone key fields and the
+    /// per-provider keys embedded in the llmServiceProviders JSON. Idempotent;
+    /// safe to call on every launch.
+    static func migrateSecretsToKeychain() {
+        let flag = "secretsMigratedToKeychain"
+        guard !d.bool(forKey: flag) else { return }
+
+        let standaloneKeys = [
+            "deepseekKey", "volcToken", "microsoftTTSKey", "googleTTSKey",
+            "tencentTTSSecretKey", "compareProvider1APIKey", "compareProvider2APIKey"
+        ]
+        for key in standaloneKeys {
+            if let value = d.string(forKey: key), !value.isEmpty {
+                KeychainStore.set(value, key: key)
+                d.removeObject(forKey: key)
+            }
+        }
+
+        if let data = d.data(forKey: llmServiceProvidersKey),
+           var providers = try? JSONDecoder().decode([LLMServiceProvider].self, from: data) {
+            var changed = false
+            for i in providers.indices where !providers[i].apiKey.isEmpty {
+                KeychainStore.set(providers[i].apiKey, key: providerKeychainKey(providers[i].id))
+                providers[i].apiKey = ""
+                changed = true
+            }
+            if changed, let blanked = try? JSONEncoder().encode(providers) {
+                d.set(blanked, forKey: llmServiceProvidersKey)
+            }
+        }
+
+        d.set(true, forKey: flag)
     }
 }
 

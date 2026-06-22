@@ -57,7 +57,7 @@ struct ServicesView: View {
     @State private var serviceTestResults: [String: ServiceTestResult] = [:]
 
     @AppStorage("llmBaseURL") private var llmBaseURL = Settings.recommendedLLMBaseURL
-    @AppStorage("deepseekKey") private var llmAPIKey = ""
+    @State private var llmAPIKey = Settings.llmAPIKey            // Keychain-backed
     @AppStorage("deepseekModel") private var llmModel = Settings.recommendedLLMModel
 
     @AppStorage("ocrAutoRunLastAction") private var ocrAutoRunLastAction = true
@@ -66,18 +66,18 @@ struct ServicesView: View {
 
     @AppStorage("ttsEngine") private var ttsEngine = AppFlavor.text("volcano", "local")
     @AppStorage("volcAppId") private var volcAppId = ""
-    @AppStorage("volcToken") private var volcToken = ""
+    @State private var volcToken = Settings.volcToken           // Keychain-backed
     @AppStorage("volcCluster") private var volcCluster = "volcano_tts"
     @AppStorage("volcVoice") private var volcVoice = AppFlavor.text("zh_female_cancan_uranus_bigtts", "en_female_dacey_uranus_bigtts")
     @AppStorage("volcSpeed") private var volcSpeed = 1.0
-    @AppStorage("microsoftTTSKey") private var microsoftTTSKey = ""
+    @State private var microsoftTTSKey = Settings.microsoftTTSKey   // Keychain-backed
     @AppStorage("microsoftTTSRegion") private var microsoftTTSRegion = "eastasia"
     @AppStorage("microsoftTTSVoice") private var microsoftTTSVoice = "zh-CN-XiaoxiaoNeural"
-    @AppStorage("googleTTSKey") private var googleTTSKey = ""
+    @State private var googleTTSKey = Settings.googleTTSKey      // Keychain-backed
     @AppStorage("googleTTSVoice") private var googleTTSVoice = "cmn-CN-Standard-A"
     @AppStorage("googleTTSSpeed") private var googleTTSSpeed = 1.0
     @AppStorage("tencentTTSSecretId") private var tencentTTSSecretId = ""
-    @AppStorage("tencentTTSSecretKey") private var tencentTTSSecretKey = ""
+    @State private var tencentTTSSecretKey = Settings.tencentTTSSecretKey   // Keychain-backed
     @AppStorage("tencentTTSHost") private var tencentTTSHost = AppFlavor.text("tts.tencentcloudapi.com", "tts.intl.tencentcloudapi.com")
     @AppStorage("tencentTTSRegion") private var tencentTTSRegion = "ap-guangzhou"
     @AppStorage("tencentTTSVoice") private var tencentTTSVoice = AppFlavor.text("1001", "1050")
@@ -131,6 +131,11 @@ struct ServicesView: View {
         .onChange(of: category) { _, newValue in
             selection = defaultSelection(for: newValue)
         }
+        .onChange(of: llmAPIKey) { _, v in Settings.llmAPIKey = v }
+        .onChange(of: volcToken) { _, v in Settings.volcToken = v }
+        .onChange(of: microsoftTTSKey) { _, v in Settings.microsoftTTSKey = v }
+        .onChange(of: googleTTSKey) { _, v in Settings.googleTTSKey = v }
+        .onChange(of: tencentTTSSecretKey) { _, v in Settings.tencentTTSSecretKey = v }
     }
 
     private var header: some View {
@@ -990,6 +995,7 @@ struct ServicesView: View {
     private func deleteSelectedLLMProvider() {
         guard let id = selectedLLMProviderID else { return }
         llmProviders.removeAll { $0.id == id }
+        Settings.deleteProviderSecret(id)
         Settings.clearActionProviderReferences(to: id)
         saveLLMProviders()
         selection = .defaultModel
@@ -1027,6 +1033,7 @@ struct ServicesView: View {
         llmAPIKey = provider.apiKey
         llmModel = provider.model
         llmProviders.removeAll { $0.id == provider.id }
+        Settings.deleteProviderSecret(provider.id)
         Settings.clearActionProviderReferences(to: provider.id)
         saveLLMProviders()
         selection = .defaultModel

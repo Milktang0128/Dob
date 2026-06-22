@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var enabledPIDs = Set<pid_t>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Settings.migrateSecretsToKeychain()   // move any plaintext keys into the Keychain first
         _ = ArchiveStore.shared
         _ = HistoryStore.shared
         _ = ActionStore.shared
