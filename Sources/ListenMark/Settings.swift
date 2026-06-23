@@ -228,6 +228,23 @@ enum Settings {
         set { d.set(max(-2, min(6, newValue)), forKey: "panelTextSizeDelta") }
     }
 
+    /// Max visible turns (user + assistant pairs counted as turns) a 对话/追问
+    /// conversation keeps before the follow-up input is disabled. The system
+    /// message and the first user turn are always kept; the oldest middle turns
+    /// are dropped first when the budget is exceeded.
+    static var conversationMaxTurns: Int {
+        get { d.object(forKey: "conversationMaxTurns") == nil ? 6 : d.integer(forKey: "conversationMaxTurns") }
+        set { d.set(max(2, min(40, newValue)), forKey: "conversationMaxTurns") }
+    }
+
+    /// Rough character budget for the assembled conversation payload. When the
+    /// estimate exceeds this, the oldest middle turns are dropped (sliding
+    /// window) while always keeping system + first user turn.
+    static var conversationCharBudget: Int {
+        get { d.object(forKey: "conversationCharBudget") == nil ? 12000 : d.integer(forKey: "conversationCharBudget") }
+        set { d.set(max(2000, min(64000, newValue)), forKey: "conversationCharBudget") }
+    }
+
     static var compareProvider1Enabled: Bool {
         get { d.bool(forKey: "compareProvider1Enabled") }
         set { d.set(newValue, forKey: "compareProvider1Enabled") }

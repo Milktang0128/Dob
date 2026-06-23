@@ -66,6 +66,24 @@ struct ConversationTurn: Codable, Equatable, Identifiable {
     var languageIsEnglish: Bool = false
 }
 
+/// In-memory state for a running 对话 / 追问 conversation. Deliberately NOT
+/// Codable and never persisted: it lives for the lifetime of one panel session.
+/// The system prompt, first user payload, provider, and context are all frozen
+/// at turn 0 so follow-ups never re-grab Accessibility text or swap models.
+struct ConversationState {
+    var rootAction: ActionDef          // skill that opened the thread (icon/name)
+    var provider: LLMProviderConfig    // frozen first-turn provider
+    var systemPrompt: String           // frozen base prompt (skill prompt or 对话 base)
+    var frozenFirstUserPayload: String // frozen first user message (selection + context)
+    var contextUsed: Bool
+    var contextExcerpt: String?
+    var sourceApp: String
+    var sourceMetadata: SourceMetadata?
+    var turns: [ConversationTurn]      // visible user/assistant turns (no system/context)
+    var startedAt: Date = Date()
+    var archived: Bool = false         // committed to the Archive at least once
+}
+
 /// Silent recent-history item. This deliberately omits full-text context so it
 /// stays lightweight and separate from intentional archive entries.
 struct HistoryEntry: Identifiable, Codable {
@@ -240,6 +258,9 @@ enum ReviewSchedule {
 
     static func isDue(_ e: Entry, now: Date) -> Bool {
         if e.mastered == true { return false }
+        // Multi-turn conversations are working notes, not review cards — keep
+        // them out of the spaced-repetition queue.
+        if e.conversationTurns != nil { return false }
         return now.timeIntervalSince(base(e)) >= interval(forCount: e.reviewCount ?? 0)
     }
 }

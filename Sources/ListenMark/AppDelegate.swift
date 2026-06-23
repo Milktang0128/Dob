@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var currentAction: ActionDef?
     private var currentContextUsed = false
     private var pendingEntry: Entry?
+    private var conversation: ConversationState?   // nil = single-shot; non-nil = conversing
     private var lastAutoText = ""
     private var streamTask: Task<Void, Never>?
     private var actionGeneration = 0
@@ -141,7 +142,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.retryCurrentAction()
         }
         m.onArchive = { [weak self] in
-            self?.archivePendingEntry(updatePanel: true)
+            guard let self else { return }
+            if self.conversation != nil {
+                self.commitConversation(updatePanel: true)
+            } else {
+                self.archivePendingEntry(updatePanel: true)
+            }
         }
         m.onArchiveOriginal = { [weak self] in
             self?.archiveOriginalCopy()
@@ -177,6 +183,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         m.onDisableForCurrentApp = { [weak self] in self?.disableAutoPopForCurrentApp() }
         m.onDisableGlobally = { [weak self] in self?.disableAutoPopGlobally() }
+        m.onFollowUpSubmit = { [weak self] text in self?.submitFollowUp(text) }
+        m.onExitConversation = { [weak self] in self?.exitConversation() }
         m.onClose = { [weak self] in self?.closePanel() }
         m.onOpenArchive = { [weak self] in self?.openArchive() }
         m.onOpenSettings = { [weak self] in self?.openSettings() }
@@ -718,6 +726,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func closePanel() {
+        // A multi-turn thread is committed once on close — cancelActiveAction
+        // saves and tears it down — so it never auto-archives per turn.
         removeOutsideMonitor()
         cancelActiveAction(stopSpeech: false)
         panelIsFadingOut = false
@@ -875,6 +885,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func cancelActiveAction(stopSpeech: Bool = true) {
+        // Starting any new action over a live thread saves and ends it first, so
+        // a fresh skill never mixes into the old conversation.
+        if conversation != nil {
+            commitConversation(updatePanel: false)
+            teardownConversation()
+        }
         actionGeneration += 1
         streamTask?.cancel()
         streamTask = nil
@@ -1183,6 +1199,244 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.model.phase = .result(action: action.name, icon: action.icon, text: spoken,
                                     replay: true, archived: auto, compact: !action.needsLLM,
                                     contextUsed: contextUsed)
+    }
+
+    // MARK: - Conversation (对话 / 追问)
+
+    /// User submitted a follow-up. Lazily promote the current single-shot result
+    /// into a conversation on the first follow-up, then stream the next answer.
+    private func submitFollowUp(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        guard beginConversationIfNeeded() else { return }
+        guard conversation != nil else { return }
+        guard !conversationAtTurnLimit() else { return }
+
+        appendTurn(.init(role: .user, text: clean,
+                         languageIsEnglish: AppFlavor.uiLanguageIsEnglish))
+        panel.model.followUpText = ""
+        runConversationStream()
+    }
+
+    /// Promote the live `.result` into a conversation (turn 0 = original payload
+    /// + first assistant answer). No-op if already conversing. Returns false if
+    /// the current result can't seed a conversation.
+    @discardableResult
+    private func beginConversationIfNeeded() -> Bool {
+        if conversation != nil { return true }
+        guard let action = currentAction, action.needsLLM else { return false }
+        let firstAnswer = currentResult.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !firstAnswer.isEmpty else { return false }
+
+        let provider = Settings.llmProvider(for: action)
+        let payload = requestPayload(for: action, selectedText: currentText,
+                                     context: currentContext, sourceMetadata: currentSourceMetadata)
+        let en = AppFlavor.uiLanguageIsEnglish
+        let state = ConversationState(
+            rootAction: action,
+            provider: provider,
+            systemPrompt: action.prompt,
+            frozenFirstUserPayload: payload.text,
+            contextUsed: currentContextUsed,
+            contextExcerpt: currentContextUsed ? contextExcerpt(from: currentContext, selectedText: currentText) : nil,
+            sourceApp: currentSource,
+            sourceMetadata: currentSourceMetadata,
+            turns: [
+                .init(role: .user, text: currentText, languageIsEnglish: en),
+                .init(role: .assistant, text: firstAnswer, model: provider.model, languageIsEnglish: en)
+            ]
+        )
+        // The seed assistant answer is already archived as a single-shot pending
+        // entry; drop it so the thread is the only record of this exchange.
+        pendingEntry = nil
+        conversation = state
+        panel.model.isConversing = true
+        syncConversationToPanel()
+        return true
+    }
+
+    /// Assembles the wire messages with sliding-window truncation that always
+    /// keeps the system message and the first user payload.
+    private func conversationMessages(_ state: ConversationState) -> [[String: String]] {
+        let messages: [[String: String]] = [
+            ["role": "system", "content": LLMClient.systemContent(state.systemPrompt)],
+            ["role": "user", "content": state.frozenFirstUserPayload]
+        ]
+        // turns[0] (the visible original) is represented by the frozen payload,
+        // so only turns from index 1 onward become additional wire messages.
+        let followUps = Array(state.turns.dropFirst())
+        var middle = followUps.map { turn -> [String: String] in
+            ["role": turn.role.rawValue, "content": turn.text]
+        }
+
+        // Drop oldest middle turns until under the char budget (system + first
+        // user are immovable).
+        let budget = Settings.conversationCharBudget
+        func estimate() -> Int {
+            messages.reduce(0) { $0 + ($1["content"]?.count ?? 0) } +
+            middle.reduce(0) { $0 + ($1["content"]?.count ?? 0) }
+        }
+        while estimate() > budget && middle.count > 1 {
+            middle.removeFirst()
+        }
+        return messages + middle
+    }
+
+    private func runConversationStream() {
+        guard let state = conversation else { return }
+        cancelStreamOnly()
+        let generation = actionGeneration
+        let provider = state.provider
+        let action = state.rootAction
+        panel.model.canCompare = false
+
+        let messages = conversationMessages(state)
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+            var full = ""
+            do {
+                for try await delta in LLMClient.stream(messages: messages, provider: provider) {
+                    full += delta
+                    let snapshot = LLMOutputSanitizer.visibleAnswer(from: full)
+                    await MainActor.run {
+                        guard self.actionGeneration == generation else { return }
+                        self.panel.model.phase = .result(action: action.name, icon: action.icon,
+                                                         text: snapshot, replay: false, archived: false,
+                                                         compact: false, contextUsed: state.contextUsed)
+                    }
+                }
+                let finalText = LLMOutputSanitizer.visibleAnswer(from: full)
+                await MainActor.run {
+                    guard self.actionGeneration == generation else { return }
+                    self.finishConversationTurn(text: finalText, model: provider.model, autoSpeak: true)
+                }
+            } catch is CancellationError {
+                let finalText = LLMOutputSanitizer.visibleAnswer(from: full)
+                await MainActor.run {
+                    guard self.actionGeneration == generation else { return }
+                    if !finalText.isEmpty {
+                        self.finishConversationTurn(text: finalText, model: provider.model, autoSpeak: false)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    guard self.actionGeneration == generation else { return }
+                    self.panel.model.phase = .error(AppFlavor.text("出错：\(Self.describe(error))", "Error: \(Self.describe(error))"))
+                }
+            }
+        }
+    }
+
+    /// A finished assistant turn. Unlike `finishResult` this NEVER records
+    /// history or sets `pendingEntry` — the whole thread is archived once on
+    /// commit, avoiding double-recording.
+    private func finishConversationTurn(text: String, model: String, autoSpeak: Bool) {
+        guard conversation != nil else { return }
+        appendTurn(.init(role: .assistant, text: text, model: model,
+                         languageIsEnglish: AppFlavor.uiLanguageIsEnglish))
+        currentResult = text
+        // The conversation may have been committed earlier; a new turn makes it
+        // dirty again so the next commit re-saves the fuller thread.
+        conversation?.archived = false
+        if autoSpeak && Settings.autoSpeakAI && !isFollowUpFieldFocused() {
+            Speaker.shared.speak(text)
+        }
+        syncConversationToPanel()
+    }
+
+    /// Mirror the conversation into the panel: the last assistant answer is the
+    /// live `.result` text; everything before it is history.
+    private func syncConversationToPanel() {
+        guard let state = conversation else { return }
+        let action = state.rootAction
+        let liveText: String
+        var prior: [ConversationTurn] = []
+        if let last = state.turns.last, last.role == .assistant {
+            liveText = last.text
+            prior = Array(state.turns.dropLast())
+        } else {
+            liveText = currentResult
+            prior = state.turns
+        }
+        panel.model.priorTurns = prior
+        panel.model.conversationAtTurnLimit = conversationAtTurnLimit()
+        panel.model.phase = .result(action: action.name, icon: action.icon, text: liveText,
+                                    replay: true, archived: state.archived, compact: false,
+                                    contextUsed: state.contextUsed)
+    }
+
+    /// Archive the whole thread as ONE entry (turns + last assistant answer as
+    /// `response`), plus one lightweight history record. Idempotent per turn.
+    private func commitConversation(updatePanel: Bool) {
+        guard var state = conversation else { return }
+        guard state.turns.contains(where: { $0.role == .assistant }) else { return }
+        guard !state.archived else { return }
+
+        let lastAnswer = state.turns.last(where: { $0.role == .assistant })?.text
+        let original = state.turns.first(where: { $0.role == .user })?.text ?? currentText
+        let entry = Entry(action: state.rootAction.name, icon: state.rootAction.icon,
+                          sourceApp: state.sourceApp, sourceMetadata: state.sourceMetadata,
+                          original: original, response: lastAnswer,
+                          responseModel: state.provider.model,
+                          contextUsed: state.contextUsed, contextExcerpt: state.contextExcerpt,
+                          conversationTurns: state.turns)
+        ArchiveStore.shared.add(entry)
+        recordHistory(action: state.rootAction.name, icon: state.rootAction.icon,
+                      source: state.sourceApp, original: original, response: lastAnswer)
+        state.archived = true
+        conversation = state
+        if updatePanel { syncConversationToPanel() }
+    }
+
+    /// Leave conversation mode and return to a plain single-turn `.result`. The
+    /// thread is committed first; the baseline result is reset to the FIRST
+    /// assistant answer so a later Compare uses the original, not follow-up chat.
+    private func exitConversation() {
+        guard let state = conversation else { return }
+        commitConversation(updatePanel: false)
+        let firstAnswer = state.turns.first(where: { $0.role == .assistant })?.text ?? currentResult
+        let original = state.turns.first(where: { $0.role == .user })?.text ?? currentText
+        let action = state.rootAction
+        let contextUsed = state.contextUsed
+        teardownConversation()
+        currentResult = firstAnswer
+        currentText = original
+        currentAction = action
+        currentContextUsed = contextUsed
+        panel.model.canCompare = action.needsLLM
+        panel.model.phase = .result(action: action.name, icon: action.icon, text: firstAnswer,
+                                    replay: true, archived: true, compact: false,
+                                    contextUsed: contextUsed)
+    }
+
+    private func teardownConversation() {
+        conversation = nil
+        panel.model.isConversing = false
+        panel.model.priorTurns = []
+        panel.model.followUpText = ""
+        panel.model.conversationAtTurnLimit = false
+    }
+
+    private func appendTurn(_ turn: ConversationTurn) {
+        conversation?.turns.append(turn)
+    }
+
+    private func conversationAtTurnLimit() -> Bool {
+        guard let state = conversation else { return false }
+        return state.turns.count >= Settings.conversationMaxTurns
+    }
+
+    /// Cancel only the in-flight stream/generation without committing or tearing
+    /// down the conversation (used between conversation turns).
+    private func cancelStreamOnly() {
+        actionGeneration += 1
+        streamTask?.cancel()
+        streamTask = nil
+        Speaker.shared.stop()
+    }
+
+    private func isFollowUpFieldFocused() -> Bool {
+        (panel.firstResponder as? NSTextView)?.isEditable == true
     }
 
     private func requestPayload(for action: ActionDef, selectedText: String,

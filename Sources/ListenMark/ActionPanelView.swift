@@ -44,6 +44,48 @@ enum ActionResultLayout {
     static func maxPanelHeight(barHeight: CGFloat) -> CGFloat {
         panelHeight(for: String(repeating: "Dob ", count: 800), panelWidth: 320, barHeight: barHeight)
     }
+
+    // MARK: Conversation (multi-turn) layout
+
+    static let conversationViewportMaxHeight: CGFloat = 260
+    static let followUpBarHeight: CGFloat = 52
+
+    /// Measured height of the scrollable history-turns area, capped at 260px.
+    static func conversationViewportHeight(for turns: [ConversationTurn], panelWidth: CGFloat) -> CGFloat {
+        guard !turns.isEmpty else { return 0 }
+        let width = max(160, panelWidth - outerHorizontalPadding - cardHorizontalPadding - 22)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = textLineSpacing
+        var total: CGFloat = 0
+        for turn in turns {
+            let rect = (turn.text as NSString).boundingRect(
+                with: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: textFontSize),
+                    .paragraphStyle: paragraph
+                ]
+            )
+            // bubble v-padding (12) + spacing between bubbles (6).
+            total += ceil(rect.height) + 12 + 6
+        }
+        return min(total, conversationViewportMaxHeight)
+    }
+
+    /// Panel height while a conversation is on screen: the regular result card
+    /// plus the history viewport and the follow-up bar.
+    static func conversationPanelHeight(priorTurns: [ConversationTurn], currentText: String,
+                                        panelWidth: CGFloat, barHeight: CGFloat) -> CGFloat {
+        let history = conversationViewportHeight(for: priorTurns, panelWidth: panelWidth)
+        let historyBlock = history > 0 ? history + 8 : 0   // + gap below the history area
+        return panelHeight(for: currentText, panelWidth: panelWidth, barHeight: barHeight)
+            + historyBlock + followUpBarHeight + 8
+    }
+
+    /// Worst-case conversation panel height — used to reserve drop-down headroom.
+    static func maxConversationPanelHeight(barHeight: CGFloat) -> CGFloat {
+        maxPanelHeight(barHeight: barHeight) + conversationViewportMaxHeight + 8 + followUpBarHeight + 8
+    }
 }
 
 enum ActionCompareLayout {
@@ -122,6 +164,15 @@ final class PanelModel: ObservableObject {
     @Published var disableAppName: String?
     @Published var webActionMode: SelectionWebAction.Mode?
 
+    // Conversation (对话 / 追问) state — deliberately OUTSIDE the Phase enum so the
+    // result card's switch, height calc, and phase-diffed animation are untouched.
+    @Published var priorTurns: [ConversationTurn] = []   // history turns above the live answer
+    @Published var followUpText: String = ""             // follow-up input, separate from inputText
+    @Published var isConversing: Bool = false            // drives guards + hides Compare
+    @Published var conversationAtTurnLimit: Bool = false // disables the follow-up bar when hit
+    var onFollowUpSubmit: ((String) -> Void)?
+    var onExitConversation: (() -> Void)?
+
     var onPick: ((ActionDef) -> Void)?
     var onInputChanged: ((String) -> Void)?
     var onReplay: (() -> Void)?
@@ -156,6 +207,7 @@ struct ActionPanelView: View {
     @State private var originalCopyToken = UUID()
     @State private var resultCopyToken = UUID()
     @State private var inputFocusRequest = 0
+    @State private var followUpFocusRequest = 0
     @AppStorage("autoSpeakAI") private var autoSpeakAI = true
     @AppStorage("panelTextSizeDelta") private var panelTextSizeDelta = 0
 
@@ -399,6 +451,10 @@ struct ActionPanelView: View {
                     }
                 }
 
+                if model.isConversing && !model.priorTurns.isEmpty {
+                    conversationHistoryView
+                }
+
                 if !compact {
                     ScrollView {
                         Text(text)
@@ -415,6 +471,10 @@ struct ActionPanelView: View {
                 }
 
                 controls(text: text, replay: replay, archived: archived)
+
+                if model.isConversing {
+                    followUpBar
+                }
             }
             .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 12)
 
@@ -490,7 +550,7 @@ struct ActionPanelView: View {
                 Button { model.onArchive?() } label: { Label(AppFlavor.text("留档", "Save"), systemImage: "tray.and.arrow.down.fill") }
                     .buttonStyle(.bordered).tint(.accentColor)
             }
-            if replay && model.canCompare {
+            if replay && model.canCompare && !model.isConversing {
                 Button { model.onCompare?() } label: {
                     Image(systemName: "rectangle.split.3x1")
                 }
@@ -572,6 +632,99 @@ struct ActionPanelView: View {
         }
         .controlSize(.small)
         .buttonBorderShape(.capsule)
+    }
+
+    // MARK: Conversation (multi-turn) UI
+
+    private var conversationHistoryView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(model.priorTurns) { turn in
+                        conversationBubble(turn)
+                            .id(turn.id)
+                    }
+                    Color.clear.frame(height: 1).id(conversationBottomAnchor)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: ActionResultLayout.conversationViewportHeight(for: model.priorTurns,
+                                                                         panelWidth: model.contentWidth))
+            .onChange(of: model.priorTurns.count) { _, _ in
+                proxy.scrollTo(conversationBottomAnchor, anchor: .bottom)
+            }
+        }
+    }
+
+    private let conversationBottomAnchor = "conversation-bottom"
+
+    private func conversationBubble(_ turn: ConversationTurn) -> some View {
+        let isUser = turn.role == .user
+        return HStack(spacing: 0) {
+            if isUser { Spacer(minLength: 24) }
+            Text(turn.text)
+                .font(.system(size: 13))
+                .lineSpacing(2)
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(isUser ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.045))
+                )
+                .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+            if !isUser { Spacer(minLength: 24) }
+        }
+    }
+
+    private var followUpBar: some View {
+        HStack(spacing: 7) {
+            ZStack(alignment: .topLeading) {
+                PanelInputTextView(text: followUpBinding,
+                                   focusRequest: followUpFocusRequest,
+                                   onSubmit: { submitFollowUp() },
+                                   onCancel: { model.onExitConversation?() })
+                    .frame(height: 34)
+                if model.followUpText.isEmpty {
+                    Text(model.conversationAtTurnLimit
+                         ? AppFlavor.text("已达对话轮数上限，请留档或重新开始", "Turn limit reached — save or start over")
+                         : AppFlavor.text("继续追问…", "Ask a follow-up…"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 8)
+                        .padding(.leading, 9)
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(.horizontal, 3)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+            .opacity(model.conversationAtTurnLimit ? 0.5 : 1)
+
+            Button { submitFollowUp() } label: {
+                Image(systemName: "paperplane.fill")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .disabled(model.conversationAtTurnLimit ||
+                      model.followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .help(AppFlavor.text("发送", "Send"))
+        }
+        .onAppear { followUpFocusRequest += 1 }
+    }
+
+    private func submitFollowUp() {
+        let text = model.followUpText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !model.conversationAtTurnLimit else { return }
+        model.onFollowUpSubmit?(text)
+    }
+
+    private var followUpBinding: Binding<String> {
+        Binding(
+            get: { model.followUpText },
+            set: { model.followUpText = $0 }
+        )
     }
 
     private var autoSpeakToggle: some View {

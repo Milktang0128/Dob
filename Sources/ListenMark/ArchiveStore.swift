@@ -65,7 +65,7 @@ final class ArchiveStore: ObservableObject {
     }
 
     func oldestForReview(limit: Int = 8) -> [Entry] {
-        Array(entries.filter { $0.mastered != true }
+        Array(entries.filter { $0.mastered != true && $0.conversationTurns == nil }
             .sorted { ReviewSchedule.base($0) < ReviewSchedule.base($1) }
             .prefix(limit))
     }
@@ -116,7 +116,20 @@ final class ArchiveStore: ObservableObject {
             if !quotedOriginal.isEmpty {
                 md += "\(quotedOriginal)\n\n"
             }
-            if let comparison = e.comparison {
+            if let turns = e.conversationTurns, !turns.isEmpty {
+                for turn in turns {
+                    let speaker = turn.role == .user
+                        ? AppFlavor.text("你", "You")
+                        : AppFlavor.text("AI", "AI")
+                    md += "### \(speaker)\n\n"
+                    let clean = turn.role == .user
+                        ? turn.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        : ArchiveMarkdownFormatter.body(turn.text)
+                    if !clean.isEmpty {
+                        md += "\(clean)\n\n"
+                    }
+                }
+            } else if let comparison = e.comparison {
                 for result in comparison.results {
                     md += "### \(result.label) · \(result.model)\n\n"
                     if let response = result.response {

@@ -10,6 +10,7 @@ final class ActionPanel: NSPanel {
     let model = PanelModel()
 
     private var cancellable: AnyCancellable?
+    private var conversationCancellable: AnyCancellable?
     private var keyMonitor: Any?
     private let minPanelWidth: CGFloat = 320
     private let barHeight: CGFloat = 40
@@ -38,6 +39,19 @@ final class ActionPanel: NSPanel {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] phase in self?.resize(for: phase) }
+
+        // Conversation history grows/shrinks without changing `phase`, so resize
+        // on those edits too (the live answer already comes through `$phase`).
+        conversationCancellable = Publishers.CombineLatest(
+            model.$priorTurns.map { $0.count }.removeDuplicates(),
+            model.$isConversing.removeDuplicates()
+        )
+        .dropFirst()
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in
+            guard let self else { return }
+            self.resize(for: self.model.phase)
+        }
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
@@ -81,6 +95,12 @@ final class ActionPanel: NSPanel {
         case .compare(_, _, let results, _, _):
             return ActionCompareLayout.panelHeight(for: results, panelWidth: currentWidth, barHeight: barHeight)
         case .result(_, _, let text, _, _, let compact, _):
+            if model.isConversing {
+                return ActionResultLayout.conversationPanelHeight(priorTurns: model.priorTurns,
+                                                                  currentText: text,
+                                                                  panelWidth: currentWidth,
+                                                                  barHeight: barHeight)
+            }
             return compact ? barHeight + 66 : ActionResultLayout.panelHeight(for: text, panelWidth: currentWidth, barHeight: barHeight)
         }
     }
@@ -153,8 +173,9 @@ final class ActionPanel: NSPanel {
         if let vf = screen?.visibleFrame {
             if origin.x + size.width > vf.maxX { origin.x = vf.maxX - size.width - 8 }
             if origin.x < vf.minX { origin.x = vf.minX + 8 }
-            // Leave headroom for the tallest result card below.
-            let maxExpansion = ActionResultLayout.maxPanelHeight(barHeight: barHeight) - barHeight
+            // Leave headroom for the tallest result card below — including a
+            // full multi-turn conversation, which is the tallest state.
+            let maxExpansion = ActionResultLayout.maxConversationPanelHeight(barHeight: barHeight) - barHeight
             if origin.y - maxExpansion < vf.minY { origin.y = mouse.y + 18 }
         }
         setFrameOrigin(origin)
@@ -170,6 +191,12 @@ final class ActionPanel: NSPanel {
         let keyCode = Int(event.keyCode)
 
         if keyCode == kVK_Escape {
+            // Two-stage exit while conversing: first Esc leaves the conversation
+            // (back to a single-turn result), a second Esc closes the panel.
+            if model.isConversing {
+                model.onExitConversation?()
+                return true
+            }
             model.onClose?()
             return true
         }
@@ -183,6 +210,14 @@ final class ActionPanel: NSPanel {
         }
 
         if case .input = model.phase {
+            return false
+        }
+
+        // When the follow-up field is focused, let native editing keys reach it
+        // (selection copy/paste/cut/select-all) instead of the panel shortcuts.
+        if isFollowUpFieldFocused, command,
+           keyCode == kVK_ANSI_C || keyCode == kVK_ANSI_A ||
+           keyCode == kVK_ANSI_V || keyCode == kVK_ANSI_X {
             return false
         }
 
@@ -205,13 +240,21 @@ final class ActionPanel: NSPanel {
             Settings.panelTextSizeDelta -= 1
             return true
         }
-        if command, let index = actionIndex(for: keyCode) {
+        // ⌘1–5 switch toolbar skills — disabled mid-conversation so the user
+        // doesn't accidentally start a new action over the thread.
+        if command, !model.isConversing, let index = actionIndex(for: keyCode) {
             let actions = ActionStore.shared.enabled
             guard actions.indices.contains(index) else { return false }
             model.onPick?(actions[index])
             return true
         }
         return false
+    }
+
+    /// Whether the first responder is an editable NSTextView (the follow-up /
+    /// dialogue input field), so panel keyboard shortcuts should defer to it.
+    private var isFollowUpFieldFocused: Bool {
+        (firstResponder as? NSTextView)?.isEditable == true
     }
 
     private func actionIndex(for keyCode: Int) -> Int? {
