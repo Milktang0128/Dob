@@ -1,0 +1,99 @@
+identifier: com.milktang.dob.popclip
+name: Dob
+icon: symbol:ear
+description:
+  en: Send selected text to Dob.
+  zh-hans: 将选中文本发送到 Dob。
+popclip version: 4151
+requirements: [text]
+app:
+  name: Dob
+  link: https://github.com/Milktang0128/Dob
+  check installed: true
+  bundle identifiers:
+    - com.listenmark.app
+actions:
+  - identifier: panel
+    title:
+      en: Dob Panel
+      zh-hans: Dob 工具条
+    icon: symbol:ear
+    javascript: |
+      const params = new URLSearchParams();
+      params.set("action", "panel");
+      params.set("text", popclip.input.text);
+      if (popclip.context.appName) params.set("sourceApp", popclip.context.appName);
+      if (popclip.context.appIdentifier) params.set("bundleID", popclip.context.appIdentifier);
+      if (popclip.context.browserTitle) params.set("pageTitle", popclip.context.browserTitle);
+      if (popclip.context.browserUrl) params.set("pageURL", popclip.context.browserUrl);
+      popclip.openUrl("dob://run?" + params.toString());
+  - identifier: read
+    title:
+      en: Read
+      zh-hans: 朗读
+    icon: symbol:speaker.wave.2.fill
+    javascript: |
+      const params = new URLSearchParams();
+      params.set("action", "read");
+      params.set("text", popclip.input.text);
+      if (popclip.context.appName) params.set("sourceApp", popclip.context.appName);
+      if (popclip.context.appIdentifier) params.set("bundleID", popclip.context.appIdentifier);
+      if (popclip.context.browserTitle) params.set("pageTitle", popclip.context.browserTitle);
+      if (popclip.context.browserUrl) params.set("pageURL", popclip.context.browserUrl);
+      popclip.openUrl("dob://run?" + params.toString());
+  - identifier: explain
+    title:
+      en: Explain
+      zh-hans: 解释
+    icon: symbol:lightbulb.fill
+    javascript: |
+      const params = new URLSearchParams();
+      params.set("action", "explain");
+      params.set("text", popclip.input.text);
+      if (popclip.context.appName) params.set("sourceApp", popclip.context.appName);
+      if (popclip.context.appIdentifier) params.set("bundleID", popclip.context.appIdentifier);
+      if (popclip.context.browserTitle) params.set("pageTitle", popclip.context.browserTitle);
+      if (popclip.context.browserUrl) params.set("pageURL", popclip.context.browserUrl);
+      popclip.openUrl("dob://run?" + params.toString());
+  - identifier: translate
+    title:
+      en: Translate
+      zh-hans: 翻译
+    icon: symbol:globe
+    javascript: |
+      const params = new URLSearchParams();
+      params.set("action", "translate");
+      params.set("text", popclip.input.text);
+      if (popclip.context.appName) params.set("sourceApp", popclip.context.appName);
+      if (popclip.context.appIdentifier) params.set("bundleID", popclip.context.appIdentifier);
+      if (popclip.context.browserTitle) params.set("pageTitle", popclip.context.browserTitle);
+      if (popclip.context.browserUrl) params.set("pageURL", popclip.context.browserUrl);
+      popclip.openUrl("dob://run?" + params.toString());
+  - identifier: summarize
+    title:
+      en: Summarize
+      zh-hans: 提炼
+    icon: symbol:list.bullet.rectangle.fill
+    javascript: |
+      const params = new URLSearchParams();
+      params.set("action", "summarize");
+      params.set("text", popclip.input.text);
+      if (popclip.context.appName) params.set("sourceApp", popclip.context.appName);
+      if (popclip.context.appIdentifier) params.set("bundleID", popclip.context.appIdentifier);
+      if (popclip.context.browserTitle) params.set("pageTitle", popclip.context.browserTitle);
+      if (popclip.context.browserUrl) params.set("pageURL", popclip.context.browserUrl);
+      popclip.openUrl("dob://run?" + params.toString());
+  - identifier: archive
+    title:
+      en: Save to Dob
+      zh-hans: 留档
+    icon: symbol:tray.and.arrow.down.fill
+    javascript: |
+      const params = new URLSearchParams();
+      params.set("action", "archive");
+      params.set("text", popclip.input.text);
+      if (popclip.context.appName) params.set("sourceApp", popclip.context.appName);
+      if (popclip.context.appIdentifier) params.set("bundleID", popclip.context.appIdentifier);
+      if (popclip.context.browserTitle) params.set("pageTitle", popclip.context.browserTitle);
+      if (popclip.context.browserUrl) params.set("pageURL", popclip.context.browserUrl);
+      popclip.openUrl("dob://run?" + params.toString());

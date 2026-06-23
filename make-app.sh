@@ -52,6 +52,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LMAppFlavor</key><string>$APP_FLAVOR</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>Dob URL</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>dob</string>
+      </array>
+    </dict>
+  </array>
   <key>LSUIElement</key><true/>
 </dict>
 </plist>

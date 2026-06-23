@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import SwiftUI
 import ApplicationServices
 import QuartzCore
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = ArchiveStore.shared
         _ = HistoryStore.shared
         _ = ActionStore.shared
+        registerURLSchemeHandler()
         setupMainMenu()
         setupStatusItem()
         wirePanel()
@@ -89,6 +91,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             GitHubReleaseUpdater.shared.checkAutomaticallyIfNeeded()
         }
+    }
+
+    private func registerURLSchemeHandler() {
+        NSAppleEventManager.shared().setEventHandler(self,
+                                                     andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+                                                     forEventClass: AEEventClass(kInternetEventClass),
+                                                     andEventID: AEEventID(kAEGetURL))
+    }
+
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor,
+                                         withReplyEvent replyEvent: NSAppleEventDescriptor) {
+        guard let raw = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue else { return }
+        handleExternalURL(raw)
     }
 
     @objc private func appActivated(_ note: Notification) {
@@ -587,6 +602,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.perform(action)
             }
         }
+    }
+
+    private func handleExternalURL(_ raw: String) {
+        guard let components = URLComponents(string: raw),
+              components.scheme?.lowercased() == "dob",
+              externalCommand(from: components) == "run" else { return }
+
+        var params: [String: String] = [:]
+        for item in components.queryItems ?? [] {
+            guard let value = item.value else { continue }
+            params[item.name] = value
+        }
+        let text = (params["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        cancelActiveAction()
+        currentText = text
+        currentContext = ""
+        currentContextSource = nil
+        currentContextUsed = false
+        currentResult = ""
+        currentAction = nil
+        pendingEntry = nil
+        lastAutoText = text
+        applyExternalSourceMetadata(params)
+
+        let actionID = (params["action"] ?? "panel").trimmingCharacters(in: .whitespacesAndNewlines)
+        switch actionID.lowercased() {
+        case "", "panel", "toolbar", "open":
+            showPanel()
+        case "archive", "save":
+            archiveExternalOriginal()
+        default:
+            showPanel()
+            guard let action = ActionStore.shared.actions.first(where: { $0.id == actionID }) else {
+                panel.model.phase = .error(AppFlavor.text("这个 PopClip 动作不存在：\(actionID)", "This PopClip action does not exist: \(actionID)"))
+                return
+            }
+            perform(action, remember: false)
+        }
+    }
+
+    private func externalCommand(from components: URLComponents) -> String {
+        if let host = components.host, !host.isEmpty {
+            return host.lowercased()
+        }
+        return components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+    }
+
+    private func applyExternalSourceMetadata(_ params: [String: String]) {
+        let appName = params["sourceApp"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackName = appName?.isEmpty == false ? appName! : "PopClip"
+        let pageTitle = params["pageTitle"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pageURL = SourceMetadataCollector.sanitizedWebURL(params["pageURL"])
+        currentSourceMetadata = SourceMetadata(appName: fallbackName,
+                                               bundleIdentifier: params["bundleID"],
+                                               windowTitle: pageTitle,
+                                               pageTitle: pageTitle,
+                                               pageURL: pageURL)
+        currentSource = currentSourceMetadata?.appName ?? fallbackName
+    }
+
+    private func archiveExternalOriginal() {
+        let entry = Entry(action: AppFlavor.text("摘录", "Clip"),
+                          icon: "doc.on.doc",
+                          sourceApp: currentSource,
+                          sourceMetadata: currentSourceMetadata,
+                          original: currentText,
+                          response: nil,
+                          contextUsed: false)
+        ArchiveStore.shared.add(entry)
+        recordHistory(action: entry.action, icon: entry.icon, source: currentSource,
+                      original: currentText, response: nil)
+        closePanel()
     }
 
     // MARK: - Panel lifecycle

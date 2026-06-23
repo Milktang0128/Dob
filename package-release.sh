@@ -91,6 +91,13 @@ package_one() {
 
 mkdir -p release
 package_one zh
+if [ -d "PopClip/Dob.popclipext" ]; then
+  popclip_asset="release/Dob-PopClip-${VERSION}.popclipextz"
+  rm -f "$popclip_asset"
+  (cd PopClip && /usr/bin/zip -qry "../$popclip_asset" "Dob.popclipext")
+  shasum -a 256 "$popclip_asset" >> "release/checksums-${VERSION}-${ARCH}.txt"
+  echo "==> Wrote ${popclip_asset}"
+fi
 # International flavor retired (v0.3.5+): the single Dob build now adapts its
 # UI language at runtime (AppFlavor.uiLanguageIsEnglish), so there is no longer
 # a separate English build to publish. Re-enable if a distinct bundle id /

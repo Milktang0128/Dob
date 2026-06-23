@@ -159,6 +159,12 @@ You can choose a custom Markdown archive folder, including an Obsidian vault. Se
 
 Every action can have its own global hotkey.
 
+## PopClip Extension
+
+If you already use PopClip, download `Dob-PopClip-...popclipextz` from Releases, or install `PopClip/Dob.popclipext` from the repository, to add Dob actions to the PopClip bar: Read, Explain, Translate, Summarize, Save, and Open Dob Panel.
+
+After installing it, you can turn off Dob's automatic selection popup in Settings. Then text selection shows PopClip first, and Dob only opens when you click a Dob action inside PopClip.
+
 ## Build
 
 ```bash
