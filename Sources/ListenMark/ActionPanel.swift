@@ -130,8 +130,8 @@ final class ActionPanel: NSPanel {
             w += 16 + iconW + 5 + ceil(labelW)
             childCount += 1
         }
-        w += 5 + 26 + 26 + 22 + 22   // divider + copy + ··· menu + pin + × close
-        childCount += 5
+        w += 5 + 26 + 26 + 26 + 22 + 22   // divider + search/link + copy + ··· menu + pin + × close
+        childCount += 6
         w += CGFloat(max(childCount - 1, 0)) * 2
         return max(minPanelWidth, ceil(w))
     }

@@ -120,6 +120,7 @@ final class PanelModel: ObservableObject {
     @Published var canCompare = false
     @Published var selectedCompareID: String?
     @Published var disableAppName: String?
+    @Published var webActionMode: SelectionWebAction.Mode?
 
     var onPick: ((ActionDef) -> Void)?
     var onInputChanged: ((String) -> Void)?
@@ -131,6 +132,7 @@ final class PanelModel: ObservableObject {
     var onCopyOriginal: (() -> Bool)?
     var onCopyResult: ((String) -> Bool)?
     var onCopyKeyboard: (() -> Bool)?
+    var onWebAction: (() -> Bool)?
     var onCompare: (() -> Void)?
     var onTogglePin: (() -> Void)?
     var onAutoSpeakChanged: ((Bool) -> Void)?
@@ -198,6 +200,20 @@ struct ActionPanelView: View {
                 ActionItem(def: def, active: model.active == def.id) { model.onPick?(def) }
             }
             Divider().frame(height: 18).padding(.horizontal, 2)
+            if let mode = model.webActionMode {
+                Button {
+                    _ = model.onWebAction?()
+                } label: {
+                    Image(systemName: mode == .link ? "arrow.up.right.square" : "magnifyingglass")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .help(mode == .link ? AppFlavor.text("打开链接", "Open Link") : AppFlavor.text("搜索原文", "Search Selection"))
+            }
             Button {
                 if model.onCopyOriginal?() == true {
                     presentOriginalCopyBubble()

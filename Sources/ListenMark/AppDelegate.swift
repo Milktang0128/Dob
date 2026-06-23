@@ -112,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         m.onInputChanged = { [weak self] text in
             self?.currentText = text
+            self?.updatePanelWebAction()
         }
         m.onReplay = { [weak self] in
             guard let self else { return }
@@ -144,6 +145,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         m.onCopyKeyboard = { [weak self] in
             self?.copyCurrentPanelText() ?? false
+        }
+        m.onWebAction = { [weak self] in
+            self?.openCurrentSelectionDestination() ?? false
         }
         m.onCompare = { [weak self] in
             self?.startCompare()
@@ -593,6 +597,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.model.canCompare = false
         panel.model.selectedCompareID = nil
         panel.model.disableAppName = currentDisableCandidate()?.appName
+        updatePanelWebAction()
         panelShownAt = Date()
         panelDismissAnchor = NSEvent.mouseLocation
         refreshOutsideMonitor()
@@ -810,6 +815,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !clean.isEmpty else { return false }
         copyToPasteboard(clean)
         return true
+    }
+
+    private func updatePanelWebAction() {
+        panel.model.webActionMode = SelectionWebAction.mode(for: currentText)
+    }
+
+    private func openCurrentSelectionDestination() -> Bool {
+        syncInputTextFromPanel()
+        guard let destination = SelectionWebAction.destination(for: currentText) else { return false }
+        let opened = NSWorkspace.shared.open(destination.url)
+        if opened {
+            closePanel()
+        }
+        return opened
     }
 
     // MARK: - Run an action
