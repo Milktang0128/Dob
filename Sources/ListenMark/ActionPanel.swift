@@ -42,9 +42,10 @@ final class ActionPanel: NSPanel {
 
         // Conversation history grows/shrinks without changing `phase`, so resize
         // on those edits too (the live answer already comes through `$phase`).
-        conversationCancellable = Publishers.CombineLatest(
+        conversationCancellable = Publishers.CombineLatest3(
             model.$priorTurns.map { $0.count }.removeDuplicates(),
-            model.$isConversing.removeDuplicates()
+            model.$isConversing.removeDuplicates(),
+            model.$canFollowUp.removeDuplicates()
         )
         .dropFirst()
         .receive(on: RunLoop.main)
@@ -102,7 +103,9 @@ final class ActionPanel: NSPanel {
                                                                   panelWidth: currentWidth,
                                                                   barHeight: barHeight)
             }
-            return compact ? barHeight + 66 : ActionResultLayout.panelHeight(for: text, panelWidth: currentWidth, barHeight: barHeight)
+            if compact { return barHeight + 66 }
+            let base = ActionResultLayout.panelHeight(for: text, panelWidth: currentWidth, barHeight: barHeight)
+            return model.canFollowUp ? base + ActionResultLayout.followUpBarHeight + 8 : base
         }
     }
 

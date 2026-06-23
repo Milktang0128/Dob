@@ -171,6 +171,7 @@ final class PanelModel: ObservableObject {
     @Published var followUpText: String = ""             // follow-up input, separate from inputText
     @Published var isConversing: Bool = false            // drives guards + hides Compare
     @Published var conversationAtTurnLimit: Bool = false // disables the follow-up bar when hit
+    @Published var canFollowUp: Bool = false             // a needsLLM result shows the follow-up bar
     @Published var dialogueInstruction: String = ""      // 对话 turn-0 instruction; NEVER synced to currentText
     var onFollowUpSubmit: ((String) -> Void)?
     var onExitConversation: (() -> Void)?
@@ -499,7 +500,7 @@ struct ActionPanelView: View {
                     }
                 }
 
-                if model.isConversing && !model.priorTurns.isEmpty {
+                if !model.priorTurns.isEmpty {
                     conversationHistoryView
                 }
 
@@ -520,7 +521,7 @@ struct ActionPanelView: View {
 
                 controls(text: text, replay: replay, archived: archived)
 
-                if model.isConversing {
+                if model.canFollowUp {
                     followUpBar
                 }
             }

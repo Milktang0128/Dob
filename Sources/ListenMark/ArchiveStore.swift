@@ -53,6 +53,17 @@ final class ArchiveStore: ObservableObject {
         save()
     }
 
+    /// Replace an entry by id, or add it if absent. Lets a growing conversation
+    /// thread update its single archive entry instead of piling up copies.
+    func update(_ entry: Entry) {
+        if let i = entries.firstIndex(where: { $0.id == entry.id }) {
+            entries[i] = entry
+            save()
+        } else {
+            add(entry)
+        }
+    }
+
     /// Re-export to a (possibly newly chosen) Markdown location.
     func relocate() { exportMarkdown() }
 

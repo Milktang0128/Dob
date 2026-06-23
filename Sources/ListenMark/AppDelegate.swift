@@ -44,7 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var currentAction: ActionDef?
     private var currentContextUsed = false
     private var pendingEntry: Entry?
+    private var lastAutoArchivedEntry: Entry?      // single-shot entry auto-added by finishResult; a follow-up supersedes it
     private var conversation: ConversationState?   // nil = single-shot; non-nil = conversing
+    private var liveConversationSnapshot = ""       // latest streamed (uncommitted) answer, for flush-on-close
     private var lastAutoText = ""
     private var streamTask: Task<Void, Never>?
     private var actionGeneration = 0
@@ -890,9 +892,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Starting any new action over a live thread saves and ends it first, so
         // a fresh skill never mixes into the old conversation.
         if conversation != nil {
+            flushLiveConversationTurn()
             commitConversation(updatePanel: false)
             teardownConversation()
         }
+        lastAutoArchivedEntry = nil
+        panel.model.canFollowUp = false
         actionGeneration += 1
         streamTask?.cancel()
         streamTask = nil
@@ -1157,6 +1162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentAction = action
         currentContextUsed = contextUsed
         panel.model.canCompare = action.needsLLM
+        panel.model.canFollowUp = false
 
         let entry = Entry(action: AppFlavor.text("比较 · \(action.name)", "Compare · \(action.name)"),
                           icon: "rectangle.split.3x1",
@@ -1199,9 +1205,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if auto {
             ArchiveStore.shared.add(entry)
             pendingEntry = nil
+            lastAutoArchivedEntry = entry
         } else {
             pendingEntry = entry
+            lastAutoArchivedEntry = nil
         }
+        panel.model.isConversing = false
+        panel.model.priorTurns = []
+        panel.model.canFollowUp = action.needsLLM
         panel.model.phase = .result(action: action.name, icon: action.icon, text: spoken,
                                     replay: true, archived: auto, compact: !action.needsLLM,
                                     contextUsed: contextUsed)
@@ -1252,11 +1263,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 .init(role: .assistant, text: firstAnswer, model: provider.model, languageIsEnglish: en)
             ]
         )
-        // The seed assistant answer is already archived as a single-shot pending
-        // entry; drop it so the thread is the only record of this exchange.
+        // Supersede the single-shot record: drop the pending entry, and if it was
+        // already auto-archived, delete that archive entry — the thread becomes
+        // the only record of this exchange.
         pendingEntry = nil
+        if let prior = lastAutoArchivedEntry {
+            ArchiveStore.shared.delete(prior)
+            lastAutoArchivedEntry = nil
+        }
         conversation = state
         panel.model.isConversing = true
+        panel.model.canFollowUp = true
         syncConversationToPanel()
         return true
     }
@@ -1291,6 +1308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func runConversationStream() {
         guard let state = conversation else { return }
         cancelStreamOnly()
+        liveConversationSnapshot = ""
         let generation = actionGeneration
         let provider = state.provider
         let action = state.rootAction
@@ -1306,6 +1324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     let snapshot = LLMOutputSanitizer.visibleAnswer(from: full)
                     await MainActor.run {
                         guard self.actionGeneration == generation else { return }
+                        self.liveConversationSnapshot = snapshot
                         self.panel.model.phase = .result(action: action.name, icon: action.icon,
                                                          text: snapshot, replay: false, archived: false,
                                                          compact: false, contextUsed: state.contextUsed)
@@ -1341,6 +1360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appendTurn(.init(role: .assistant, text: text, model: model,
                          languageIsEnglish: AppFlavor.uiLanguageIsEnglish))
         currentResult = text
+        liveConversationSnapshot = ""
         // The conversation may have been committed earlier; a new turn makes it
         // dirty again so the next commit re-saves the fuller thread.
         conversation?.archived = false
@@ -1380,15 +1400,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let lastAnswer = state.turns.last(where: { $0.role == .assistant })?.text
         let original = state.turns.first(where: { $0.role == .user })?.text ?? currentText
-        let entry = Entry(action: state.rootAction.name, icon: state.rootAction.icon,
+        let isFirstCommit = state.committedEntryID == nil
+        let entryID = state.committedEntryID ?? UUID()
+        let entry = Entry(id: entryID, action: state.rootAction.name, icon: state.rootAction.icon,
                           sourceApp: state.sourceApp, sourceMetadata: state.sourceMetadata,
                           original: original, response: lastAnswer,
                           responseModel: state.provider.model,
                           contextUsed: state.contextUsed, contextExcerpt: state.contextExcerpt,
                           conversationTurns: state.turns)
-        ArchiveStore.shared.add(entry)
-        recordHistory(action: state.rootAction.name, icon: state.rootAction.icon,
-                      source: state.sourceApp, original: original, response: lastAnswer)
+        if isFirstCommit {
+            ArchiveStore.shared.add(entry)
+            recordHistory(action: state.rootAction.name, icon: state.rootAction.icon,
+                          source: state.sourceApp, original: original, response: lastAnswer)
+        } else {
+            ArchiveStore.shared.update(entry)   // grow the same entry instead of piling up copies
+        }
+        state.committedEntryID = entryID
         state.archived = true
         conversation = state
         if updatePanel { syncConversationToPanel() }
@@ -1409,7 +1436,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentText = original
         currentAction = action
         currentContextUsed = contextUsed
-        panel.model.canCompare = action.needsLLM
+        panel.model.canCompare = action.needsLLM && action.id != "dialogue"
+        panel.model.canFollowUp = action.needsLLM
         panel.model.phase = .result(action: action.name, icon: action.icon, text: firstAnswer,
                                     replay: true, archived: true, compact: false,
                                     contextUsed: contextUsed)
@@ -1421,6 +1449,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.model.priorTurns = []
         panel.model.followUpText = ""
         panel.model.conversationAtTurnLimit = false
+        panel.model.canFollowUp = false
+        liveConversationSnapshot = ""
+    }
+
+    /// If the panel closes while a follow-up is still streaming, capture the
+    /// partial answer already on screen into the thread so the archived record
+    /// matches what the user saw.
+    private func flushLiveConversationTurn() {
+        let snapshot = liveConversationSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard conversation != nil, !snapshot.isEmpty else { return }
+        if let last = conversation?.turns.last, last.role == .assistant, last.text == snapshot { return }
+        appendTurn(.init(role: .assistant, text: snapshot, model: conversation?.provider.model,
+                         languageIsEnglish: AppFlavor.uiLanguageIsEnglish))
+        conversation?.archived = false
+        liveConversationSnapshot = ""
     }
 
     private func appendTurn(_ turn: ConversationTurn) {
@@ -1429,7 +1472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func conversationAtTurnLimit() -> Bool {
         guard let state = conversation else { return false }
-        return state.turns.count >= Settings.conversationMaxTurns
+        return state.turns.filter { $0.role == .user }.count >= Settings.conversationMaxTurns
     }
 
     /// Cancel only the in-flight stream/generation without committing or tearing
@@ -1524,6 +1567,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         conversation = state
         panel.model.dialogueInstruction = ""
         panel.model.isConversing = true
+        panel.model.canFollowUp = true
         panel.model.priorTurns = []
         panel.model.conversationAtTurnLimit = false
         panel.model.phase = .loading(action.name)
@@ -1543,7 +1587,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let useContext = Settings.useFullContext
         let sourceBlock = useContext ? sourceMetadata?.modelContextBlock : nil
         let hasFullTextContext = useContext && !cleanContext.isEmpty && cleanContext != trimmedSelection
-        let hasReadableSourceContext = useContext && sourceMetadata?.hasReadableContext == true
 
         var zhBlocks = ["我的要求：\n\(instruction)", "选中内容：\n\(selectedText)"]
         var enBlocks = ["My request:\n\(instruction)", "Selected text:\n\(selectedText)"]
@@ -1556,7 +1599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             enBlocks.append("Full-text context:\n\(cleanContext)")
         }
         let text = AppFlavor.text(zhBlocks.joined(separator: "\n\n"), enBlocks.joined(separator: "\n\n"))
-        return (text, hasFullTextContext || hasReadableSourceContext)
+        return (text, sourceBlock != nil || hasFullTextContext)
     }
 
     private func requestPayload(for action: ActionDef, selectedText: String,

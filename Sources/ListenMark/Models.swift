@@ -82,6 +82,7 @@ struct ConversationState {
     var turns: [ConversationTurn]      // visible user/assistant turns (no system/context)
     var startedAt: Date = Date()
     var archived: Bool = false         // committed to the Archive at least once
+    var committedEntryID: UUID?        // archive Entry id, so re-commits update in place
 }
 
 /// Silent recent-history item. This deliberately omits full-text context so it
