@@ -185,6 +185,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.onDisableGlobally = { [weak self] in self?.disableAutoPopGlobally() }
         m.onFollowUpSubmit = { [weak self] text in self?.submitFollowUp(text) }
         m.onExitConversation = { [weak self] in self?.exitConversation() }
+        m.onDialogueSubmit = { [weak self] instruction in self?.startDialogue(instruction: instruction) }
+        m.onDialogueCancel = { [weak self] in self?.cancelDialogueInput() }
         m.onClose = { [weak self] in self?.closePanel() }
         m.onOpenArchive = { [weak self] in self?.openArchive() }
         m.onOpenSettings = { [weak self] in self?.openSettings() }
@@ -798,7 +800,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch panel.model.phase {
         case .idle, .captureNotice:
             return true
-        case .input, .loading, .error, .compare, .result:
+        case .input, .dialogueInput, .loading, .error, .compare, .result:
             return false
         }
     }
@@ -941,6 +943,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func perform(_ action: ActionDef, remember: Bool = true) {
         syncInputTextFromPanel()
         refreshCurrentSourceForAction()
+        if action.id == "dialogue" {
+            beginDialogueInput(action, remember: remember)
+            return
+        }
         let text = currentText
         guard !text.isEmpty else { return }
         if remember {
@@ -1437,6 +1443,120 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func isFollowUpFieldFocused() -> Bool {
         (panel.firstResponder as? NSTextView)?.isEditable == true
+    }
+
+    // MARK: - 对话 (Chat) skill
+
+    /// Base system prompt for the 对话 skill (the action's own `prompt` is "").
+    private var dialogueBasePrompt: String {
+        AppFlavor.text(
+            "你是嵌在用户当前阅读 / 写作场景里的助手。请结合用户选中的内容与其上下文，完成用户提出的要求；用户没有给出明确指令时，就简明地回应他这句话。",
+            "You are an assistant embedded in the user's current reading and writing context. Use the selected text and its surrounding context to do what the user asks. If no explicit instruction is given, respond concisely to their message."
+        )
+    }
+
+    /// 对话 entry: validate the provider, then show the instruction input over a
+    /// snapshot of the current selection (the LLM runs later, in startDialogue).
+    private func beginDialogueInput(_ action: ActionDef, remember: Bool) {
+        let provider = Settings.llmProvider(for: action)
+        if provider.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            panel.model.phase = .error(AppFlavor.text("「\(action.name)」需要 API Key，请到「设置」填写 OpenAI 兼容接口配置", "\(action.name) needs an API key. Add your OpenAI-compatible API settings in Settings."))
+            return
+        }
+        if provider.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            provider.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            panel.model.phase = .error(AppFlavor.text("「\(action.name)」的模型服务未配置完整，请到「设置」检查 Base URL 和模型名", "\(action.name)'s model service is incomplete. Check Base URL and model in Settings."))
+            return
+        }
+        if remember { Settings.lastActionID = action.id }
+        cancelActiveAction()
+        panel.model.active = action.id
+        panel.model.canCompare = false
+        panel.model.selectedCompareID = nil
+        panel.model.dialogueInstruction = ""
+        panel.requestKeyboardFocus()
+        panel.model.phase = .dialogueInput(selectedText: currentText)
+    }
+
+    /// Empty instruction + Return cancels back to the toolbar; otherwise this is
+    /// the user committing turn 0 of a 对话 thread.
+    private func cancelDialogueInput() {
+        panel.model.dialogueInstruction = ""
+        panel.model.active = nil
+        panel.model.phase = .idle
+    }
+
+    /// Build 对话 turn 0 from the typed instruction + selection + context, then
+    /// flow into the SAME conversation engine that follow-ups use.
+    private func startDialogue(instruction: String) {
+        let clean = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else {
+            cancelDialogueInput()
+            return
+        }
+        guard let action = ActionStore.shared.actions.first(where: { $0.id == "dialogue" }) else { return }
+        refreshCurrentSourceForAction()
+
+        let selectedText = currentText
+        let provider = Settings.llmProvider(for: action)
+        cancelActiveAction()
+
+        let context = contextText(for: selectedText)
+        currentContext = context
+        let payload = dialoguePayload(instruction: clean, selectedText: selectedText,
+                                      context: context, sourceMetadata: currentSourceMetadata)
+        currentContextUsed = payload.contextUsed
+        currentAction = action
+        currentResult = ""
+
+        let en = AppFlavor.uiLanguageIsEnglish
+        let state = ConversationState(
+            rootAction: action,
+            provider: provider,
+            systemPrompt: dialogueBasePrompt,
+            frozenFirstUserPayload: payload.text,
+            contextUsed: payload.contextUsed,
+            contextExcerpt: payload.contextUsed ? contextExcerpt(from: context, selectedText: selectedText) : nil,
+            sourceApp: currentSource,
+            sourceMetadata: currentSourceMetadata,
+            turns: [.init(role: .user, text: clean, languageIsEnglish: en)]
+        )
+        conversation = state
+        panel.model.dialogueInstruction = ""
+        panel.model.isConversing = true
+        panel.model.priorTurns = []
+        panel.model.conversationAtTurnLimit = false
+        panel.model.phase = .loading(action.name)
+        runConversationStream()
+    }
+
+    /// First user message for 对话: instruction first, then the selection and any
+    /// context, so the model treats the instruction as the task over the content.
+    private func dialoguePayload(instruction: String, selectedText: String, context: String,
+                                 sourceMetadata: SourceMetadata?) -> (text: String, contextUsed: Bool) {
+        let trimmedSelection = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSelection.isEmpty else {
+            // No selection — a pure chat message.
+            return (instruction, false)
+        }
+        let cleanContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        let useContext = Settings.useFullContext
+        let sourceBlock = useContext ? sourceMetadata?.modelContextBlock : nil
+        let hasFullTextContext = useContext && !cleanContext.isEmpty && cleanContext != trimmedSelection
+        let hasReadableSourceContext = useContext && sourceMetadata?.hasReadableContext == true
+
+        var zhBlocks = ["我的要求：\n\(instruction)", "选中内容：\n\(selectedText)"]
+        var enBlocks = ["My request:\n\(instruction)", "Selected text:\n\(selectedText)"]
+        if let sourceBlock {
+            zhBlocks.append("来源信息：\n\(sourceBlock)")
+            enBlocks.append("Source metadata:\n\(sourceBlock)")
+        }
+        if hasFullTextContext {
+            zhBlocks.append("全文上下文：\n\(cleanContext)")
+            enBlocks.append("Full-text context:\n\(cleanContext)")
+        }
+        let text = AppFlavor.text(zhBlocks.joined(separator: "\n\n"), enBlocks.joined(separator: "\n\n"))
+        return (text, hasFullTextContext || hasReadableSourceContext)
     }
 
     private func requestPayload(for action: ActionDef, selectedText: String,

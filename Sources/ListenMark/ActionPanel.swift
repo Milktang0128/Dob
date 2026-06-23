@@ -89,6 +89,7 @@ final class ActionPanel: NSPanel {
         switch phase {
         case .idle: return barHeight
         case .input: return barHeight + 164
+        case .dialogueInput: return barHeight + 150
         case .captureNotice: return barHeight + 58
         case .loading: return barHeight + 48
         case .error: return barHeight + 56
@@ -191,6 +192,11 @@ final class ActionPanel: NSPanel {
         let keyCode = Int(event.keyCode)
 
         if keyCode == kVK_Escape {
+            // In the 对话 instruction box, Esc cancels back to the toolbar.
+            if case .dialogueInput = model.phase {
+                model.onDialogueCancel?()
+                return true
+            }
             // Two-stage exit while conversing: first Esc leaves the conversation
             // (back to a single-turn result), a second Esc closes the panel.
             if model.isConversing {
@@ -210,6 +216,10 @@ final class ActionPanel: NSPanel {
         }
 
         if case .input = model.phase {
+            return false
+        }
+        // 对话 instruction box: defer all remaining keys to the text view.
+        if case .dialogueInput = model.phase {
             return false
         }
 

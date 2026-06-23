@@ -145,6 +145,7 @@ final class PanelModel: ObservableObject {
     enum Phase: Equatable {
         case idle
         case input
+        case dialogueInput(selectedText: String)   // 对话: type an instruction over the selection
         case captureNotice(source: String, text: String)
         case loading(String)                                                              // action name
         case result(action: String, icon: String, text: String, replay: Bool,
@@ -170,8 +171,11 @@ final class PanelModel: ObservableObject {
     @Published var followUpText: String = ""             // follow-up input, separate from inputText
     @Published var isConversing: Bool = false            // drives guards + hides Compare
     @Published var conversationAtTurnLimit: Bool = false // disables the follow-up bar when hit
+    @Published var dialogueInstruction: String = ""      // 对话 turn-0 instruction; NEVER synced to currentText
     var onFollowUpSubmit: ((String) -> Void)?
     var onExitConversation: (() -> Void)?
+    var onDialogueSubmit: ((String) -> Void)?
+    var onDialogueCancel: (() -> Void)?
 
     var onPick: ((ActionDef) -> Void)?
     var onInputChanged: ((String) -> Void)?
@@ -213,6 +217,13 @@ struct ActionPanelView: View {
 
     private var resultFontSize: CGFloat { CGFloat(13 + panelTextSizeDelta) }
 
+    private func needsInputFocus(_ phase: PanelModel.Phase) -> Bool {
+        switch phase {
+        case .input, .dialogueInput: return true
+        default: return false
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             toolbar
@@ -232,12 +243,12 @@ struct ActionPanelView: View {
         )
         .animation(.easeOut(duration: 0.16), value: model.phase)
         .onAppear {
-            if model.phase == .input {
+            if needsInputFocus(model.phase) {
                 inputFocusRequest += 1
             }
         }
         .onChange(of: model.phase) { _, phase in
-            if phase == .input {
+            if needsInputFocus(phase) {
                 inputFocusRequest += 1
             }
         }
@@ -370,6 +381,43 @@ struct ActionPanelView: View {
         switch model.phase {
         case .idle:
             EmptyView()
+
+        case .dialogueInput(let selectedText):
+            VStack(alignment: .leading, spacing: 8) {
+                Label(AppFlavor.text("对这段内容说点什么", "Tell the AI what to do"), systemImage: "bubble.left.and.text.bubble.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                ZStack(alignment: .topLeading) {
+                    PanelInputTextView(text: dialogueBinding,
+                                       focusRequest: inputFocusRequest,
+                                       onSubmit: { model.onDialogueSubmit?(model.dialogueInstruction) },
+                                       onCancel: { model.onDialogueCancel?() })
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if model.dialogueInstruction.isEmpty {
+                        Text(AppFlavor.text("对这段内容说点什么…例如「换个说法」「举个例子」", "Tell the AI what to do with this…"))
+                            .font(.system(size: 13))
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 1)
+                            .padding(.leading, 1)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .frame(height: 78)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+
+                Text(selectedText.isEmpty
+                     ? AppFlavor.text("回车发送，留空回车取消。", "Press Return to send, or Return on an empty line to cancel.")
+                     : AppFlavor.text("已选中 \(selectedText.count) 字，回车发送。", "\(selectedText.count) characters selected. Press Return to send."))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
 
         case .input:
             VStack(alignment: .leading, spacing: 8) {
@@ -781,6 +829,16 @@ struct ActionPanelView: View {
                 model.inputText = value
                 model.onInputChanged?(value)
             }
+        )
+    }
+
+    /// 对话 turn-0 instruction. Deliberately does NOT touch `inputText` /
+    /// `onInputChanged`, so the typed instruction never leaks into `currentText`
+    /// (which still holds the selected text).
+    private var dialogueBinding: Binding<String> {
+        Binding(
+            get: { model.dialogueInstruction },
+            set: { model.dialogueInstruction = $0 }
         )
     }
 

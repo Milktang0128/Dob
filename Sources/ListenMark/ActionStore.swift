@@ -71,6 +71,11 @@ final class ActionStore: ObservableObject {
                   enabled: true, isBuiltin: true, needsLLM: true,
                   prompt: optimizedPrompts["translate"]!,
                   hotKeyCode: kVK_ANSI_T, hotKeyMods: controlKey | shiftKey, hotKeyDisplay: "⌃⇧T"),
+        // 对话: a one-off custom instruction over the selection. `prompt:""` —
+        // the user's typed instruction is the semantics; the base system prompt
+        // is supplied at runtime in startDialogue. Sits in 提炼's visible slot.
+        ActionDef(id: "dialogue", name: AppFlavor.text("对话", "Chat"), icon: "bubble.left.and.text.bubble.right",
+                  enabled: true, isBuiltin: true, needsLLM: true, prompt: ""),
         ActionDef(id: "summarize", name: AppFlavor.text("提炼", "Summarize"), icon: "list.bullet.rectangle.fill",
                   enabled: true, isBuiltin: true, needsLLM: true,
                   prompt: optimizedPrompts["summarize"]!),
@@ -110,7 +115,17 @@ final class ActionStore: ObservableObject {
             // Append any newly-added built-ins not present in the saved config.
             var result = saved
             let ids = Set(saved.map { $0.id })
-            for b in ActionStore.builtins where !ids.contains(b.id) { result.append(b) }
+            for b in ActionStore.builtins where !ids.contains(b.id) {
+                // 对话 belongs in 提炼's slot: insert it right before the user's
+                // saved summarize action (for a full 5-skill toolbar this pushes
+                // 提炼 into the 「更多」 menu — intended). Other new built-ins append.
+                if b.id == "dialogue",
+                   let summarizeIndex = result.firstIndex(where: { $0.id == "summarize" }) {
+                    result.insert(b, at: summarizeIndex)
+                } else {
+                    result.append(b)
+                }
+            }
             actions = normalized(result,
                                  applyNewDefaults: defaults.data(forKey: key) == nil,
                                  applyDefaultHotKeys: shouldApplyDefaultHotKeys,
