@@ -78,7 +78,9 @@ struct HistoryView: View {
 private struct HistoryEntryCard: View {
     let entry: HistoryEntry
     @ObservedObject private var store = HistoryStore.shared
+    @ObservedObject private var archive = ArchiveStore.shared
     @State private var hover = false
+    @State private var expanded = false
 
     private static let df: DateFormatter = {
         let f = DateFormatter()
@@ -94,6 +96,23 @@ private struct HistoryEntryCard: View {
 
     private var playableText: String {
         responseText ?? entry.original
+    }
+
+    private var isArchived: Bool {
+        archive.entries.contains { $0.original == entry.original && $0.action == entry.action }
+    }
+
+    /// Rough check of whether the collapsed line limits would truncate, so the
+    /// expand toggle only appears when there is actually more to see.
+    private var isLong: Bool {
+        estimatedLines(entry.original, charsPerLine: 46) > 3 ||
+        (responseText.map { estimatedLines($0, charsPerLine: 46) > 8 } ?? false)
+    }
+
+    private func estimatedLines(_ s: String, charsPerLine: Int) -> Int {
+        s.split(separator: "\n", omittingEmptySubsequences: false).reduce(0) { acc, line in
+            acc + max(1, Int(ceil(Double(line.count) / Double(charsPerLine))))
+        }
     }
 
     var body: some View {
@@ -134,6 +153,14 @@ private struct HistoryEntryCard: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(hover ? .primary : .secondary)
                 .help(AppFlavor.text("重听", "Replay"))
+                Button { archiveEntry() } label: {
+                    Image(systemName: isArchived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(isArchived ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(hover ? .secondary : .tertiary))
+                .disabled(isArchived)
+                .help(isArchived ? AppFlavor.text("已留档", "Archived") : AppFlavor.text("留档", "Archive"))
                 Button { copy(playableText) } label: {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 13))
@@ -153,14 +180,27 @@ private struct HistoryEntryCard: View {
             Text(entry.original)
                 .font(.system(size: 13))
                 .foregroundStyle(responseText == nil ? .primary : .secondary)
-                .lineLimit(3)
-                .textSelection(.enabled)
+                .lineLimit(expanded ? nil : 3)
+                .textSelectionEnabled(expanded || !isLong)
 
             if let response = responseText {
                 Text(response)
                     .font(.system(size: 13))
-                    .lineLimit(8)
-                    .textSelection(.enabled)
+                    .lineLimit(expanded ? nil : 8)
+                    .textSelectionEnabled(expanded || !isLong)
+            }
+
+            if isLong {
+                Button { withAnimation(.easeOut(duration: 0.16)) { expanded.toggle() } } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        Text(expanded ? AppFlavor.text("收起", "Collapse") : AppFlavor.text("展开", "Expand"))
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 1)
             }
         }
         .padding(13)
@@ -172,8 +212,26 @@ private struct HistoryEntryCard: View {
         .onHover { hover = $0 }
     }
 
+    private func archiveEntry() {
+        guard !isArchived else { return }
+        let e = Entry(action: entry.action, icon: entry.icon, sourceApp: entry.sourceApp,
+                      original: entry.original, response: entry.response,
+                      responseModel: entry.responseModel, comparison: entry.comparison)
+        ArchiveStore.shared.add(e)
+    }
+
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+private extension View {
+    /// Toggle text selection. A selectable *truncated* Text in a LazyVStack
+    /// misreports its height on macOS and overlaps its siblings, so callers
+    /// disable selection only while a card is collapsed and truncated.
+    @ViewBuilder
+    func textSelectionEnabled(_ enabled: Bool) -> some View {
+        if enabled { textSelection(.enabled) } else { textSelection(.disabled) }
     }
 }
