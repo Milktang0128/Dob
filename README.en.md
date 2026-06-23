@@ -28,17 +28,14 @@ Signed and notarized installers are published on GitHub Releases:
 
 <https://github.com/Milktang0128/Dob/releases>
 
-| Edition | Installer | Notes |
-|---|---|---|
-| Chinese | `Dob-...-arm64.dmg` | Recommended for Chinese users |
-| International | `Dob-International-...-arm64.dmg` | English UI and English-first workflows |
+Download the latest `Dob-...-arm64.dmg` from the Releases page.
 
-Installers are signed and notarized by Apple. The Chinese and international editions update separately.
+Installers are signed and notarized by Apple, and Dob checks for updates automatically. The interface language follows your system (Chinese / English) and can be switched in Settings → General.
 
 Quick start:
 
-1. Download the DMG, open it, and drag **Dob International** to Applications.
-2. Open Dob International and grant Accessibility permission when macOS asks.
+1. Download the DMG, open it, and drag **Dob** to Applications.
+2. Open Dob and grant Accessibility permission when macOS asks.
 3. Open **Services...** from the menu bar item, then add an OpenAI-compatible API key. DeepSeek is prefilled as the recommended default provider.
 4. Select text in any app, wait for the panel, or press `Option + Command + R`.
 
@@ -163,15 +160,6 @@ You can choose a custom Markdown archive folder, including an Obsidian vault. Se
 Every action can have its own global hotkey.
 
 ## Build
-
-Build the international edition:
-
-```bash
-FLAVOR=en ./make-app.sh
-open "Dob International.app"
-```
-
-Build the Chinese edition:
 
 ```bash
 ./make-app.sh
