@@ -4,11 +4,13 @@ import SwiftUI
 import ApplicationServices
 import QuartzCore
 
-/// Snapshot of a hidden-but-alive panel session, captured on `hidePanel(preserve:)`
-/// and rehydrated by `restorePanel()`. Captures ALL the AppDelegate scalars a
-/// restored panel reads (Compare baseline, Archive original, Copy-all, follow-up
-/// archiving) — restoring only `conversation` would leave the rest stale.
-private struct PreservedSession {
+/// A complete, frame-independent snapshot of one live "operation" (a `.result`
+/// or `.compare` the user is looking at). Captures ALL the AppDelegate scalars a
+/// restored operation reads (Compare baseline, Archive original, Copy-all,
+/// follow-up archiving) plus the panel-model operation mirror — restoring only
+/// `conversation` would leave the rest stale. Used both by the browser-style
+/// back/forward history and (wrapped in `PreservedSession`) by hide/restore.
+private struct OperationSnapshot {
     var phase: PanelModel.Phase
     var currentText: String
     var currentContext: String
@@ -23,8 +25,8 @@ private struct PreservedSession {
     var conversation: ConversationState?
     var lastAutoText: String
 
-    // Panel-model mirror needed to rebuild the conversation UI without re-running
-    // showNearMouse (which would reset phase/active/pinned).
+    // Panel-model mirror needed to rebuild the result/conversation UI without
+    // re-running showNearMouse (which would reset phase/active/pinned).
     var active: String?
     var isConversing: Bool
     var isStickyConversation: Bool
@@ -34,12 +36,24 @@ private struct PreservedSession {
     var priorTurns: [ConversationTurn]
     var followUpText: String
     var conversationAtTurnLimit: Bool
+    var selectedCompareID: String?
+}
+
+/// A hidden-but-alive panel session, captured on `hidePanel(preserve:)` and
+/// rehydrated by `restorePanel()`. Carries the full operation plus the layout
+/// bits hide/restore additionally needs (content width + frame top-left) and the
+/// back/forward history stacks so the whole navigation survives a hide→restore.
+private struct PreservedSession {
+    var operation: OperationSnapshot
     var contentWidth: CGFloat
 
     // Top-left of the panel at hide time. The panel grows DOWNWARD from a fixed
-    // top edge, so restore must anchor maxY here — `frameOrigin` (bottom-left)
-    // would drift once the restored height differs from the height at hide time.
+    // top edge, so restore must anchor maxY here — the bottom-left origin would
+    // drift once the restored height differs from the height at hide time.
     var frameTopLeft: NSPoint
+
+    var historyBack: [OperationSnapshot]
+    var historyForward: [OperationSnapshot]
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -93,23 +107,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // #5 hide/restore: a hidden-but-alive panel keeps its full state here so
     // ⌥⌘D / 状态栏「显示 Dob」can bring the same conversation back.
     private var preservedSession: PreservedSession?
-    // #6 skill-switch suspend: single recoverable "上个对话" slot. A new root
-    // selection commits + parks the live thread here instead of destroying it.
-    private var suspendedThreads: [ConversationState] = []
+    // Browser-style operation history. Starting a new operation (a skill, 对话,
+    // or a new root selection that shows a result) pushes the current operation
+    // onto `historyBack` and clears `historyForward`; ← / → navigate between them.
+    private var historyBack: [OperationSnapshot] = []
+    private var historyForward: [OperationSnapshot] = []
     // Identifies the current root selection. A NEW selection bumps this so a
     // same-skill re-run on a different selection never resumes the old thread.
     private var currentSelectionToken = UUID()
     private weak var restoreMenuItem: NSMenuItem?
-    private var dialogueParkedOnEntry = false   // 对话 entry parked a live thread; cancel resumes it
 
-    /// Commit any live conversation before quitting so a hidden or on-screen
-    /// thread isn't silently lost on ⌘Q (hide-preserve no longer commits;
-    /// suspended threads were already committed when parked).
+    /// Commit the live conversation AND every conversation parked in the
+    /// back/forward history before quitting so no thread is silently lost on ⌘Q.
+    /// Each commit is idempotent. (Hiding the panel does NOT clear `conversation`
+    /// or the history stacks — it only snapshots them — so the live vars still
+    /// hold everything even while the panel is hidden.)
     func applicationWillTerminate(_ notification: Notification) {
-        if conversation != nil {
-            flushLiveConversationTurn()
-            commitConversation(updatePanel: false)
-        }
+        commitAllConversationsOnClose()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -248,7 +262,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.onFollowUpSubmit = { [weak self] text in self?.submitFollowUp(text) }
         m.onExitConversation = { [weak self] in self?.exitConversation() }
         m.onHidePreserve = { [weak self] in self?.hidePanel(preserve: true) }
-        m.onResumeThread = { [weak self] in self?.resumeSuspendedThread() }
+        m.onGoBack = { [weak self] in self?.goBack() }
+        m.onGoForward = { [weak self] in self?.goForward() }
         m.onDialogueSubmit = { [weak self] instruction in self?.startDialogue(instruction: instruction) }
         m.onDialogueCancel = { [weak self] in self?.cancelDialogueInput() }
         m.onClose = { [weak self] in self?.closePanel() }
@@ -818,14 +833,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func closePanel() {
-        // A multi-turn thread is committed once on close — cancelActiveAction
-        // saves and tears it down — so it never auto-archives per turn. Explicit
-        // close also drops any hidden snapshot and the recoverable thread.
+        // Closing commits the live conversation AND every conversation sitting in
+        // the back/forward history (each idempotent via committedEntryID) so no
+        // thread is lost, then tears everything down and clears the history.
         removeOutsideMonitor()
+        commitAllConversationsOnClose()
         cancelActiveAction(stopSpeech: false)
         preservedSession = nil
-        suspendedThreads = []
-        panel.model.hasSuspendedThread = false
+        historyBack = []
+        historyForward = []
+        syncHistoryButtons()
         panelIsFadingOut = false
         panel.model.pinned = false
         panel.releaseKeyboardFocus()
@@ -861,31 +878,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         streamTask = nil
         Speaker.shared.stop()
 
+        // Snapshot the live operation plus the whole back/forward history so the
+        // entire navigation survives a hide→restore.
         preservedSession = PreservedSession(
-            phase: panel.model.phase,
-            currentText: currentText,
-            currentContext: currentContext,
-            currentContextSource: currentContextSource,
-            currentSource: currentSource,
-            currentSourceMetadata: currentSourceMetadata,
-            currentResult: currentResult,
-            currentAction: currentAction,
-            currentContextUsed: currentContextUsed,
-            pendingEntry: pendingEntry,
-            lastAutoArchivedEntry: lastAutoArchivedEntry,
-            conversation: conversation,
-            lastAutoText: lastAutoText,
-            active: panel.model.active,
-            isConversing: panel.model.isConversing,
-            isStickyConversation: panel.model.isStickyConversation,
-            canFollowUp: panel.model.canFollowUp,
-            canCompare: panel.model.canCompare,
-            followUpMode: panel.model.followUpMode,
-            priorTurns: panel.model.priorTurns,
-            followUpText: panel.model.followUpText,
-            conversationAtTurnLimit: panel.model.conversationAtTurnLimit,
+            operation: captureOperation(),
             contentWidth: panel.model.contentWidth,
-            frameTopLeft: NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+            frameTopLeft: NSPoint(x: panel.frame.minX, y: panel.frame.maxY),
+            historyBack: historyBack,
+            historyForward: historyForward
         )
 
         panelIsFadingOut = false
@@ -908,6 +908,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         preservedSession = nil
 
+        // Restore the back/forward history so the whole navigation survives the
+        // hide→restore round-trip.
+        historyBack = s.historyBack
+        historyForward = s.historyForward
+
+        restoreOperation(s.operation)
+
+        panel.model.pinned = false
+        panel.model.contentWidth = s.contentWidth
+        panel.model.disableAppName = currentDisableCandidate()?.appName
+        syncHistoryButtons()
+
+        panelIsFadingOut = false
+        panel.alphaValue = 1
+        // Pin the panel's TOP edge to where it was hidden. `reapplyLayout` (below)
+        // anchors the resized frame to the current `maxY` and grows downward, so
+        // pre-seating maxY at the captured top-left.y makes the restored panel
+        // reappear at the exact spot — at its full restored height — instead of
+        // jumping toward the menu bar off a stale frame height.
+        panel.anchorTopLeft(s.frameTopLeft)
+        panel.requestKeyboardFocus()
+        panel.orderFrontRegardless()
+
+        // `restoreOperation` already drove the phase (via syncConversationToPanel
+        // or a direct set). The phase value may equal the one held before hiding,
+        // so `$phase.removeDuplicates` could swallow its resize — re-run the
+        // layout pass explicitly to re-clamp to the (possibly changed) screen.
+        panel.reapplyLayout()
+
+        panelShownAt = Date()
+        panelDismissAnchor = NSEvent.mouseLocation
+        refreshOutsideMonitor()
+    }
+
+    // MARK: - Operation snapshots & back/forward history
+
+    /// Snapshot the current live operation exactly as-is (no meaningfulness
+    /// filter). Used by hide/restore.
+    private func captureOperation() -> OperationSnapshot {
+        OperationSnapshot(
+            phase: panel.model.phase,
+            currentText: currentText,
+            currentContext: currentContext,
+            currentContextSource: currentContextSource,
+            currentSource: currentSource,
+            currentSourceMetadata: currentSourceMetadata,
+            currentResult: currentResult,
+            currentAction: currentAction,
+            currentContextUsed: currentContextUsed,
+            pendingEntry: pendingEntry,
+            lastAutoArchivedEntry: lastAutoArchivedEntry,
+            conversation: conversation,
+            lastAutoText: lastAutoText,
+            active: panel.model.active,
+            isConversing: panel.model.isConversing,
+            isStickyConversation: panel.model.isStickyConversation,
+            canFollowUp: panel.model.canFollowUp,
+            canCompare: panel.model.canCompare,
+            followUpMode: panel.model.followUpMode,
+            priorTurns: panel.model.priorTurns,
+            followUpText: panel.model.followUpText,
+            conversationAtTurnLimit: panel.model.conversationAtTurnLimit,
+            selectedCompareID: panel.model.selectedCompareID
+        )
+    }
+
+    /// Snapshot the current operation only if it is worth navigating back to.
+    /// Transient/bare phases (idle, loading, capture notice, input, dialogue
+    /// input, error) carry no operation — only `.result` and `.compare` do.
+    private func captureCurrentOperation() -> OperationSnapshot? {
+        switch panel.model.phase {
+        case .result, .compare:
+            return captureOperation()
+        case .idle, .loading, .captureNotice, .input, .dialogueInput, .error:
+            return nil
+        }
+    }
+
+    /// Rehydrate every AppDelegate scalar + panel-model operation field from a
+    /// snapshot, then drive the panel phase (conversation UI if a thread, else the
+    /// stored phase). Does NOT touch frame/position or the history stacks.
+    private func restoreOperation(_ s: OperationSnapshot) {
         currentText = s.currentText
         currentContext = s.currentContext
         currentContextSource = s.currentContextSource
@@ -930,36 +1012,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.model.priorTurns = s.priorTurns
         panel.model.followUpText = s.followUpText
         panel.model.conversationAtTurnLimit = s.conversationAtTurnLimit
+        panel.model.selectedCompareID = s.selectedCompareID
         panel.model.isAwaitingReply = false
-        panel.model.hasSuspendedThread = !suspendedThreads.isEmpty
-        panel.model.pinned = false
-        panel.model.contentWidth = s.contentWidth
-        panel.model.disableAppName = currentDisableCandidate()?.appName
 
-        panelIsFadingOut = false
-        panel.alphaValue = 1
-        // Pin the panel's TOP edge to where it was hidden. `reapplyLayout` (below)
-        // anchors the resized frame to the current `maxY` and grows downward, so
-        // pre-seating maxY at the captured top-left.y makes the restored panel
-        // reappear at the exact spot — at its full restored height — instead of
-        // jumping toward the menu bar off a stale frame height.
-        panel.anchorTopLeft(s.frameTopLeft)
-        panel.requestKeyboardFocus()
-        panel.orderFrontRegardless()
-
-        // Restore the live conversation UI (if any). The phase value may equal the
-        // one held before hiding, so `$phase.removeDuplicates` could swallow it —
-        // re-run the layout pass explicitly to re-clamp to the screen.
         if conversation != nil {
             syncConversationToPanel()
         } else {
             panel.model.phase = s.phase
         }
-        panel.reapplyLayout()
+    }
 
-        panelShownAt = Date()
-        panelDismissAnchor = NSEvent.mouseLocation
-        refreshOutsideMonitor()
+    /// Push the current operation (if meaningful) onto the back stack and clear
+    /// the forward stack — the browser-style "new navigation" gesture. Flush any
+    /// in-flight streamed turn first so the snapshot matches what the user saw.
+    /// The caller is about to build a new operation; the prior conversation lives
+    /// on in the snapshot and is committed on close/quit, so it is NOT committed
+    /// or torn-down-lost here.
+    private func pushCurrentOperationToHistory() {
+        flushLiveConversationTurn()
+        guard let snap = captureCurrentOperation() else { return }
+        historyBack.append(snap)
+        historyForward.removeAll()
+        syncHistoryButtons()
+    }
+
+    /// ← : step back to the previous operation, pushing the current one forward.
+    private func goBack() {
+        guard let prev = historyBack.popLast() else { return }
+        // Fold any partial streamed turn into the thread BEFORE cancelling the
+        // stream, so the operation we're leaving keeps what the user just saw.
+        flushLiveConversationTurn()
+        cancelStreamForHistoryNavigation()
+        if let current = captureCurrentOperation() {
+            historyForward.append(current)
+        }
+        restoreOperation(prev)
+        syncHistoryButtons()
+        panel.requestKeyboardFocus()
+        panel.reapplyLayout()
+    }
+
+    /// → : step forward to the next operation, pushing the current one back.
+    private func goForward() {
+        guard let next = historyForward.popLast() else { return }
+        flushLiveConversationTurn()
+        cancelStreamForHistoryNavigation()
+        if let current = captureCurrentOperation() {
+            historyBack.append(current)
+        }
+        restoreOperation(next)
+        syncHistoryButtons()
+        panel.requestKeyboardFocus()
+        panel.reapplyLayout()
+    }
+
+    /// Cancel any in-flight stream/TTS before swapping operations during history
+    /// navigation (the snapshot being left already absorbed its partial turn via
+    /// the caller's `flushLiveConversationTurn`).
+    private func cancelStreamForHistoryNavigation() {
+        actionGeneration += 1
+        streamTask?.cancel()
+        streamTask = nil
+        Speaker.shared.stop()
+    }
+
+    private func syncHistoryButtons() {
+        panel.model.canGoBack = !historyBack.isEmpty
+        panel.model.canGoForward = !historyForward.isEmpty
+    }
+
+    /// Commit the live conversation plus every conversation parked in the
+    /// back/forward history. Each commit is idempotent (committedEntryID), so a
+    /// thread that was committed earlier is only grown, never duplicated.
+    private func commitAllConversationsOnClose() {
+        if conversation != nil {
+            flushLiveConversationTurn()
+            commitConversation(updatePanel: false)
+        }
+        for snap in historyBack + historyForward {
+            if let state = snap.conversation {
+                commitThread(state)
+            }
+        }
     }
 
     private func handlePanelPointerMotion() {
@@ -1108,20 +1242,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// A fresh root selection is being established (selection / OCR / input panel
-    /// / URL / auto-pop). Park the live thread as recoverable, bump the selection
-    /// token so a same-skill re-run never resumes it, and drop any hidden-panel
-    /// snapshot — the user is starting something new.
+    /// / URL / auto-pop). Push the current operation onto the back/forward history
+    /// (the user is starting something new), bump the selection token, and drop
+    /// any hidden-panel snapshot.
     private func beginNewRootSelection() {
         currentSelectionToken = UUID()
         preservedSession = nil
-        cancelActiveAction(suspend: true)
+        pushCurrentOperationToHistory()
+        cancelActiveAction()
     }
 
-    private func cancelActiveAction(stopSpeech: Bool = true, suspend: Bool = false) {
-        // Starting any new action over a live thread saves and ends it first, so
-        // a fresh skill never mixes into the old conversation. When `suspend` is
-        // set the committed thread is parked (recoverable) rather than discarded.
-        endOrSuspendConversation(suspend: suspend)
+    /// Tear down the live operation before a new one is built: cancel the
+    /// in-flight stream and clear the conversation/follow-up state. Does NOT
+    /// commit the conversation — when a new operation supersedes the current one,
+    /// the prior thread has already been captured into the back/forward history
+    /// (committed on close/quit), so committing here would be redundant.
+    private func cancelActiveAction(stopSpeech: Bool = true) {
+        teardownConversation()
         lastAutoArchivedEntry = nil
         panel.model.canFollowUp = false
         actionGeneration += 1
@@ -1130,47 +1267,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if stopSpeech {
             Speaker.shared.stop()
         }
-    }
-
-    /// Flush the in-flight turn, commit the thread once, then either park it in
-    /// the single recoverable slot (`suspend`) or discard it. No-op without a live
-    /// conversation.
-    private func endOrSuspendConversation(suspend: Bool) {
-        guard conversation != nil else { return }
-        flushLiveConversationTurn()
-        commitConversation(updatePanel: false)
-        if suspend, let state = conversation,
-           state.turns.contains(where: { $0.role == .assistant }) {
-            suspendedThreads = [state]   // single slot (O2)
-        }
-        teardownConversation()
-        panel.model.hasSuspendedThread = !suspendedThreads.isEmpty
-    }
-
-    /// Bring back the single parked 「上个对话」: end whatever single-shot is on
-    /// screen (committing it), then re-seat the suspended thread as the live
-    /// conversation. The new selection's record is untouched.
-    private func resumeSuspendedThread() {
-        guard let state = suspendedThreads.last else { return }
-        // Commit (don't re-park) anything currently live, then drop the slot.
-        cancelActiveAction(suspend: false)
-        suspendedThreads = []
-        conversation = state
-        currentText = state.turns.first(where: { $0.role == .user })?.text ?? currentText
-        currentResult = state.turns.last(where: { $0.role == .assistant })?.text ?? ""
-        currentAction = state.rootAction
-        currentContext = ""
-        currentContextUsed = state.contextUsed
-        currentSource = state.sourceApp
-        currentSourceMetadata = state.sourceMetadata
-        panel.model.active = state.rootAction.id == "dialogue" ? "dialogue" : nil
-        panel.model.isConversing = true
-        panel.model.isStickyConversation = state.rootAction.id == "dialogue"
-        panel.model.canFollowUp = true
-        panel.model.canCompare = false
-        panel.model.followUpMode = .expanded
-        panel.model.hasSuspendedThread = false
-        syncConversationToPanel()
     }
 
     private func retryCurrentAction() {
@@ -1237,9 +1333,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
-        // Switching skills over a live thread parks it as recoverable ("上个对话")
-        // rather than destroying it — same selection, new action.
-        cancelActiveAction(suspend: conversation != nil)
+        // Running a skill is a new operation: push the current one (a result /
+        // conversation, if any) onto the back/forward history so ← returns to it,
+        // then tear it down before building the new result. The prior conversation
+        // lives on in the snapshot (committed on close/quit), not lost here.
+        pushCurrentOperationToHistory()
+        cancelActiveAction()
         let generation = actionGeneration
         panel.model.active = action.id
         panel.model.canCompare = false
@@ -1684,12 +1783,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                     contextUsed: state.contextUsed)
     }
 
-    /// Archive the whole thread as ONE entry (turns + last assistant answer as
-    /// `response`), plus one lightweight history record. Idempotent per turn.
+    /// Archive the live conversation as ONE entry (turns + last assistant answer
+    /// as `response`), plus one lightweight history record. Idempotent per turn.
     private func commitConversation(updatePanel: Bool) {
-        guard var state = conversation else { return }
-        guard state.turns.contains(where: { $0.role == .assistant }) else { return }
-        guard !state.archived else { return }
+        guard let state = conversation else { return }
+        if let committed = commitThread(state) {
+            conversation = committed
+        }
+        if updatePanel { syncConversationToPanel() }
+    }
+
+    /// Archive an arbitrary thread (live or one parked in the back/forward
+    /// history). Returns the thread with its `committedEntryID`/`archived` set on
+    /// first commit, or nil when there was nothing new to archive. Idempotent:
+    /// an already-archived thread is skipped; a re-commit grows the same entry
+    /// instead of piling up duplicates (de-dup via `committedEntryID`).
+    @discardableResult
+    private func commitThread(_ state: ConversationState) -> ConversationState? {
+        guard state.turns.contains(where: { $0.role == .assistant }) else { return nil }
+        guard !state.archived else { return nil }
 
         let lastAnswer = state.turns.last(where: { $0.role == .assistant })?.text
         let original = state.turns.first(where: { $0.role == .user })?.text ?? currentText
@@ -1708,10 +1820,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             ArchiveStore.shared.update(entry)   // grow the same entry instead of piling up copies
         }
-        state.committedEntryID = entryID
-        state.archived = true
-        conversation = state
-        if updatePanel { syncConversationToPanel() }
+        var committed = state
+        committed.committedEntryID = entryID
+        committed.archived = true
+        return committed
     }
 
     /// Leave conversation mode and return to a plain single-turn `.result`. The
@@ -1808,10 +1920,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         if remember { Settings.lastActionID = action.id }
-        // Entering 对话 over a live thread parks it as recoverable ("上个对话");
-        // remember we did, so cancelling the dialogue brings it straight back.
-        dialogueParkedOnEntry = conversation != nil
-        cancelActiveAction(suspend: conversation != nil)
+        // Entering 对话 is a new operation: push the current one (a result /
+        // conversation, if any) onto the back/forward history before tearing it
+        // down, so ← returns to it. (The push happens here rather than in
+        // startDialogue because the instruction box — a non-meaningful phase —
+        // would no longer carry the operation by the time startDialogue runs.)
+        pushCurrentOperationToHistory()
+        cancelActiveAction()
         panel.model.active = action.id
         panel.model.canCompare = false
         panel.model.selectedCompareID = nil
@@ -1820,18 +1935,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.model.phase = .dialogueInput(selectedText: currentText)
     }
 
-    /// Empty instruction + Return cancels back to the toolbar; otherwise this is
-    /// the user committing turn 0 of a 对话 thread.
+    /// Empty instruction + Return cancels back to the toolbar. The prior operation
+    /// (if any) already sits in the back history from `beginDialogueInput`, so the
+    /// ← button brings it back — no special resume path needed.
     private func cancelDialogueInput() {
         panel.model.dialogueInstruction = ""
-        // If we parked a live thread to open this dialogue, bring it back instead
-        // of dropping to the toolbar (otherwise the 「上个对话」 affordance vanishes).
-        if dialogueParkedOnEntry, !suspendedThreads.isEmpty {
-            dialogueParkedOnEntry = false
-            resumeSuspendedThread()
-            return
-        }
-        dialogueParkedOnEntry = false
         panel.model.active = nil
         panel.model.phase = .idle
     }
@@ -1849,8 +1957,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let selectedText = currentText
         let provider = Settings.llmProvider(for: action)
+        // The meaningful prior operation was already pushed to history in
+        // `beginDialogueInput`; the current `.dialogueInput` phase carries no
+        // operation, so this push is a harmless no-op kept for symmetry with the
+        // other new-operation entry points.
+        pushCurrentOperationToHistory()
         cancelActiveAction()
-        dialogueParkedOnEntry = false   // submitted, not cancelled — the parked thread stays as 「上个对话」
 
         let context = contextText(for: selectedText)
         currentContext = context

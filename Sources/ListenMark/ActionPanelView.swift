@@ -189,12 +189,14 @@ final class PanelModel: ObservableObject {
     @Published var canFollowUp: Bool = false             // a needsLLM result shows the follow-up affordance
     @Published var followUpMode: FollowUpMode = .collapsed // collapsed 「追问」button vs. expanded input bar
     @Published var isAwaitingReply: Bool = false         // user turn submitted, assistant answer not yet streaming
-    @Published var hasSuspendedThread: Bool = false      // a 「上个对话」 can be resumed (skill-switch parked it)
+    @Published var canGoBack: Bool = false               // ← : a previous operation sits in the back history
+    @Published var canGoForward: Bool = false            // → : a next operation sits in the forward history
     @Published var dialogueInstruction: String = ""      // 对话 turn-0 instruction; NEVER synced to currentText
     var onFollowUpSubmit: ((String) -> Void)?
     var onExitConversation: (() -> Void)?
     var onHidePreserve: (() -> Void)?   // sticky 对话 first Esc: hide-and-preserve
-    var onResumeThread: (() -> Void)?   // restore the suspended 「上个对话」
+    var onGoBack: (() -> Void)?         // ← : step to the previous operation
+    var onGoForward: (() -> Void)?      // → : step to the next operation
     var onDialogueSubmit: ((String) -> Void)?
     var onDialogueCancel: (() -> Void)?
 
@@ -504,6 +506,7 @@ struct ActionPanelView: View {
         case .result(let action, let icon, let text, let replay, let archived, let compact, let contextUsed):
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 6) {
+                    historyNavButtons
                     Image(systemName: icon)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -554,6 +557,7 @@ struct ActionPanelView: View {
         case .compare(let action, let icon, let results, let archived, let contextUsed):
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 6) {
+                    historyNavButtons
                     Image(systemName: icon)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -591,6 +595,32 @@ struct ActionPanelView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14).padding(.vertical, 13)
+        }
+    }
+
+    /// Browser-style back/forward navigation across the operation history. Shown
+    /// left-aligned in the result/compare card header; each chevron appears only
+    /// when there is somewhere to go in that direction.
+    @ViewBuilder private var historyNavButtons: some View {
+        if model.canGoBack || model.canGoForward {
+            HStack(spacing: 3) {
+                if model.canGoBack {
+                    Button { model.onGoBack?() } label: {
+                        Image(systemName: "chevron.backward")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(AppFlavor.text("上一步", "Back"))
+                }
+                if model.canGoForward {
+                    Button { model.onGoForward?() } label: {
+                        Image(systemName: "chevron.forward")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(AppFlavor.text("下一步", "Forward"))
+                }
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -641,13 +671,6 @@ struct ActionPanelView: View {
                 }
                 .buttonStyle(.bordered)
                 .help(AppFlavor.text("继续追问", "Ask a follow-up"))
-            }
-            if model.hasSuspendedThread && !model.isConversing {
-                Button { model.onResumeThread?() } label: {
-                    Label(AppFlavor.text("上个对话", "Last chat"), systemImage: "arrow.uturn.backward")
-                }
-                .buttonStyle(.bordered)
-                .help(AppFlavor.text("恢复上一段对话", "Resume the previous conversation"))
             }
             Spacer()
             Button { model.onClose?() } label: { Image(systemName: "xmark") }
