@@ -649,16 +649,21 @@ struct ActionPanelView: View {
                     dismissResultCopyBubble(after: 0.65)
                 }
             }
-            if replay && !archived {
-                Button { model.onArchive?() } label: { Label(AppFlavor.text("留档", "Save"), systemImage: "tray.and.arrow.down.fill") }
-                    .buttonStyle(.bordered).tint(.accentColor)
+            if replay {
+                Button { if !archived { model.onArchive?() } } label: {
+                    Image(systemName: archived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
+                .tint(archived ? .accentColor : nil)   // neutral until saved, accent after
+                .disabled(archived)
+                .help(archived ? AppFlavor.text("已留档", "Saved") : AppFlavor.text("留档", "Save"))
             }
             if replay && model.canCompare && !model.isConversing {
                 Button { model.onCompare?() } label: {
                     Image(systemName: "rectangle.split.3x1")
                 }
                 .buttonStyle(.bordered)
-                .help(AppFlavor.text("比较模型结果", "Compare Models"))
+                .help(AppFlavor.text("比较模型结果", "Compare models"))
             }
             if model.canFollowUp && model.followUpMode == .collapsed {
                 Button {
@@ -667,10 +672,10 @@ struct ActionPanelView: View {
                     }
                     followUpFocusRequest += 1
                 } label: {
-                    Label(AppFlavor.text("追问", "Follow up"), systemImage: "bubble.left.and.text.bubble.right")
+                    Image(systemName: "bubble.left.and.text.bubble.right")
                 }
                 .buttonStyle(.bordered)
-                .help(AppFlavor.text("继续追问", "Ask a follow-up"))
+                .help(AppFlavor.text("追问", "Follow up"))
             }
             Spacer()
             Button { model.onClose?() } label: { Image(systemName: "xmark") }
@@ -737,10 +742,13 @@ struct ActionPanelView: View {
                     dismissResultCopyBubble(after: 0.65)
                 }
             }
-            if !archived {
-                Button { model.onArchive?() } label: { Label(AppFlavor.text("留档", "Save"), systemImage: "tray.and.arrow.down.fill") }
-                    .buttonStyle(.bordered).tint(.accentColor)
+            Button { if !archived { model.onArchive?() } } label: {
+                Image(systemName: archived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
             }
+            .buttonStyle(.bordered)
+            .tint(archived ? .accentColor : nil)
+            .disabled(archived)
+            .help(archived ? AppFlavor.text("已留档", "Saved") : AppFlavor.text("留档", "Save"))
             Spacer()
             Button { model.onClose?() } label: { Image(systemName: "xmark") }
                 .buttonStyle(.bordered).help(AppFlavor.text("关闭", "Close"))

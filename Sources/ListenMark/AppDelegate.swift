@@ -425,10 +425,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
             guard let self else { return }
             guard self.autoPopGeneration == generation else { return }
-            // A hidden-but-preserved panel reports isVisible==false, so also bail
-            // when a snapshot exists — otherwise the next selection would clobber
-            // a conversation the user can still restore.
-            guard !self.panel.isVisible, self.preservedSession == nil else { return }
+            // The panel may be hidden-but-preserved (isVisible==false). Allow the
+            // new selection: beginNewRootSelection parks the current operation into
+            // the back/forward history (and clears the snapshot), so nothing the
+            // user can get back to is clobbered.
+            guard !self.panel.isVisible else { return }
             let contextSource = SelectionGrabber.contextSource()
             if let text = SelectionGrabber.axSelectedText() {
                 self.presentAutoSelection(text, contextSource: contextSource)
@@ -446,10 +447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             SelectionGrabber.copySelectedTextAsync { [weak self] text in
                 guard let self else { return }
                 guard self.autoPopGeneration == generation else { return }
-                // A hidden-but-preserved panel reports isVisible==false, so also bail
-            // when a snapshot exists — otherwise the next selection would clobber
-            // a conversation the user can still restore.
-            guard !self.panel.isVisible, self.preservedSession == nil else { return }
+                guard !self.panel.isVisible else { return }
                 guard let text, !text.isEmpty else {
                     self.clearAutoSelectionState()
                     return
