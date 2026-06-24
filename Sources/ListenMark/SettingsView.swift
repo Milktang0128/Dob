@@ -37,6 +37,7 @@ struct SettingsView: View {
     @AppStorage("autoPopCopyFallback") private var autoPopCopyFallback = true
     @AppStorage("autoDismissPanel") private var autoDismissPanel = true
     @AppStorage("hkDisplay") private var hkDisplay = "⌥⌘R"
+    @AppStorage("restoreHkDisplay") private var restoreHkDisplay = "⌃⇧D"
     @AppStorage("ocrHkDisplay") private var ocrHkDisplay = "⌃⇧O"
     @AppStorage("silentOcrHkDisplay") private var silentOcrHkDisplay = "⌃⇧C"
     @AppStorage("inputHkDisplay") private var inputHkDisplay = "⌃⇧I"
@@ -233,6 +234,16 @@ struct SettingsView: View {
                 Settings.hotKeyMods = carbonModifiers(mods)
                 Settings.hotKeyDisplay = disp
                 hkDisplay = disp
+                NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+            }
+            HotkeySetting(title: AppFlavor.text("找回面板", "Restore panel"),
+                          subtitle: AppFlavor.text("把刚才藏起来的对话或结果原位找回（也可用菜单栏「显示 Dob」）。",
+                                                   "Bring back the conversation or result you just hid (also in the menu bar’s “Show Dob”)."),
+                          display: $restoreHkDisplay) { code, mods, disp in
+                Settings.restoreHotKeyCode = Int(code)
+                Settings.restoreHotKeyMods = carbonModifiers(mods)
+                Settings.restoreHotKeyDisplay = disp
+                restoreHkDisplay = disp
                 NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
             }
         }

@@ -589,14 +589,14 @@ enum Settings {
     }
 
     static var restoreHotKeyMods: Int {
-        get { d.object(forKey: "restoreHkMods") == nil ? (optionKey | cmdKey) : d.integer(forKey: "restoreHkMods") }
+        get { d.object(forKey: "restoreHkMods") == nil ? (controlKey | shiftKey) : d.integer(forKey: "restoreHkMods") }
         set { d.set(newValue, forKey: "restoreHkMods") }
     }
 
     static var restoreHotKeyDisplay: String {
         get {
             let s = d.string(forKey: "restoreHkDisplay") ?? ""
-            return s.isEmpty ? "⌥⌘D" : s
+            return s.isEmpty ? "⌃⇧D" : s
         }
         set { d.set(newValue, forKey: "restoreHkDisplay") }
     }
