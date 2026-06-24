@@ -40,19 +40,24 @@ final class ActionPanel: NSPanel {
             .receive(on: RunLoop.main)
             .sink { [weak self] phase in self?.resize(for: phase) }
 
-        // Conversation history grows/shrinks without changing `phase`, so resize
-        // on those edits too (the live answer already comes through `$phase`).
-        conversationCancellable = Publishers.CombineLatest3(
-            model.$priorTurns.map { $0.count }.removeDuplicates(),
-            model.$isConversing.removeDuplicates(),
-            model.$canFollowUp.removeDuplicates()
-        )
-        .dropFirst()
-        .receive(on: RunLoop.main)
-        .sink { [weak self] _ in
-            guard let self else { return }
-            self.resize(for: self.model.phase)
-        }
+        // Conversation history / follow-up affordance grow & shrink without
+        // changing `phase`, so resize on those edits too (the live answer already
+        // comes through `$phase`). These are too many publishers for a
+        // CombineLatest (4-element cap), so merge each into a single Void signal.
+        let resizeTriggers: [AnyPublisher<Void, Never>] = [
+            model.$priorTurns.map { $0.count }.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
+            model.$isConversing.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
+            model.$canFollowUp.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
+            model.$followUpMode.map { _ in () }.eraseToAnyPublisher(),
+            model.$isAwaitingReply.removeDuplicates().map { _ in () }.eraseToAnyPublisher()
+        ]
+        conversationCancellable = Publishers.MergeMany(resizeTriggers)
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.resize(for: self.model.phase)
+            }
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
@@ -102,11 +107,13 @@ final class ActionPanel: NSPanel {
                                                                   currentText: text,
                                                                   panelWidth: currentWidth,
                                                                   barHeight: barHeight,
+                                                                  followUpVisible: model.canFollowUp && model.followUpMode == .expanded,
                                                                   awaitingReply: model.isAwaitingReply)
             }
             if compact { return barHeight + 66 }
             let base = ActionResultLayout.panelHeight(for: text, panelWidth: currentWidth, barHeight: barHeight)
-            return model.canFollowUp ? base + ActionResultLayout.followUpBarHeight + 8 : base
+            let followUpVisible = model.canFollowUp && model.followUpMode == .expanded
+            return followUpVisible ? base + ActionResultLayout.followUpBarHeight + 8 : base
         }
     }
 
@@ -199,6 +206,16 @@ final class ActionPanel: NSPanel {
             // In the 对话 instruction box, Esc cancels back to the toolbar.
             if case .dialogueInput = model.phase {
                 model.onDialogueCancel?()
+                return true
+            }
+            // An empty, expanded follow-up box on a non-sticky thread collapses
+            // back to the 「追问」button rather than exiting the conversation.
+            if model.isConversing, !model.isStickyConversation,
+               model.followUpMode == .expanded,
+               model.followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                model.followUpMode = .collapsed
+                releaseKeyboardFocus()
+                makeFirstResponder(nil)
                 return true
             }
             // Two-stage exit while conversing: first Esc leaves the conversation

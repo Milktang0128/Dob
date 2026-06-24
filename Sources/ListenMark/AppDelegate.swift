@@ -1211,8 +1211,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             lastAutoArchivedEntry = nil
         }
         panel.model.isConversing = false
+        panel.model.isStickyConversation = false
         panel.model.priorTurns = []
         panel.model.canFollowUp = action.needsLLM
+        panel.model.followUpMode = .collapsed
+        panel.model.isAwaitingReply = false
         panel.model.phase = .result(action: action.name, icon: action.icon, text: spoken,
                                     replay: true, archived: auto, compact: !action.needsLLM,
                                     contextUsed: contextUsed)
@@ -1276,7 +1279,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         conversation = state
         panel.model.isConversing = true
+        panel.model.isStickyConversation = false
         panel.model.canFollowUp = true
+        panel.model.followUpMode = .collapsed
         syncConversationToPanel()
         return true
     }
@@ -1374,6 +1379,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The conversation may have been committed earlier; a new turn makes it
         // dirty again so the next commit re-saves the fuller thread.
         conversation?.archived = false
+        // Once a thread has at least one completed round it stays expanded — every
+        // further turn keeps the input bar rather than re-collapsing to a button.
+        panel.model.followUpMode = .expanded
         if autoSpeak && Settings.autoSpeakAI && !isFollowUpFieldFocused() {
             Speaker.shared.speak(text)
         }
@@ -1462,10 +1470,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func teardownConversation() {
         conversation = nil
         panel.model.isConversing = false
+        panel.model.isStickyConversation = false
         panel.model.priorTurns = []
         panel.model.followUpText = ""
         panel.model.conversationAtTurnLimit = false
         panel.model.canFollowUp = false
+        panel.model.followUpMode = .collapsed
+        panel.model.isAwaitingReply = false
         liveConversationSnapshot = ""
     }
 
@@ -1583,7 +1594,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         conversation = state
         panel.model.dialogueInstruction = ""
         panel.model.isConversing = true
+        panel.model.isStickyConversation = true
         panel.model.canFollowUp = true
+        panel.model.followUpMode = .expanded
         panel.model.priorTurns = []
         panel.model.conversationAtTurnLimit = false
         panel.model.phase = .loading(action.name)

@@ -80,12 +80,14 @@ enum ActionResultLayout {
 
     static func conversationPanelHeight(priorTurns: [ConversationTurn], currentText: String,
                                         panelWidth: CGFloat, barHeight: CGFloat,
+                                        followUpVisible: Bool = true,
                                         awaitingReply: Bool = false) -> CGFloat {
         let history = conversationViewportHeight(for: priorTurns, panelWidth: panelWidth)
         let historyBlock = history > 0 ? history + 8 : 0   // + gap below the history area
         let awaitingBlock = awaitingReply ? awaitingReplyBubbleHeight + 9 : 0
+        let followUpBlock = followUpVisible ? followUpBarHeight + 8 : 0
         return panelHeight(for: currentText, panelWidth: panelWidth, barHeight: barHeight)
-            + historyBlock + awaitingBlock + followUpBarHeight + 8
+            + historyBlock + awaitingBlock + followUpBlock
     }
 
     /// Worst-case conversation panel height — used to reserve drop-down headroom.
@@ -148,6 +150,11 @@ enum ActionCompareLayout {
 /// the row is a fixed slim height and never grows — results appear in a capped
 /// card below it (and 朗读 stays compact).
 final class PanelModel: ObservableObject {
+    /// Whether the follow-up affordance is a collapsed 「追问」button (normal
+    /// skills, single source of truth — views and height both read only this)
+    /// or the expanded input bar (对话 mode, or any thread with ≥1 round).
+    enum FollowUpMode { case collapsed, expanded }
+
     enum Phase: Equatable {
         case idle
         case input
@@ -176,8 +183,10 @@ final class PanelModel: ObservableObject {
     @Published var priorTurns: [ConversationTurn] = []   // history turns above the live answer
     @Published var followUpText: String = ""             // follow-up input, separate from inputText
     @Published var isConversing: Bool = false            // drives guards + hides Compare
+    @Published var isStickyConversation: Bool = false    // 对话 (Chat): input stays expanded; Esc differs
     @Published var conversationAtTurnLimit: Bool = false // disables the follow-up bar when hit
-    @Published var canFollowUp: Bool = false             // a needsLLM result shows the follow-up bar
+    @Published var canFollowUp: Bool = false             // a needsLLM result shows the follow-up affordance
+    @Published var followUpMode: FollowUpMode = .collapsed // collapsed 「追问」button vs. expanded input bar
     @Published var isAwaitingReply: Bool = false         // user turn submitted, assistant answer not yet streaming
     @Published var dialogueInstruction: String = ""      // 对话 turn-0 instruction; NEVER synced to currentText
     var onFollowUpSubmit: ((String) -> Void)?
@@ -532,7 +541,7 @@ struct ActionPanelView: View {
 
                 controls(text: text, replay: replay, archived: archived)
 
-                if model.canFollowUp {
+                if model.canFollowUp && model.followUpMode == .expanded {
                     followUpBar
                 }
             }
@@ -616,6 +625,18 @@ struct ActionPanelView: View {
                 }
                 .buttonStyle(.bordered)
                 .help(AppFlavor.text("比较模型结果", "Compare Models"))
+            }
+            if model.canFollowUp && model.followUpMode == .collapsed {
+                Button {
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        model.followUpMode = .expanded
+                    }
+                    followUpFocusRequest += 1
+                } label: {
+                    Label(AppFlavor.text("追问", "Follow up"), systemImage: "bubble.left.and.text.bubble.right")
+                }
+                .buttonStyle(.bordered)
+                .help(AppFlavor.text("继续追问", "Ask a follow-up"))
             }
             Spacer()
             Button { model.onClose?() } label: { Image(systemName: "xmark") }
