@@ -97,6 +97,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // same-skill re-run on a different selection never resumes the old thread.
     private var currentSelectionToken = UUID()
     private weak var restoreMenuItem: NSMenuItem?
+    private var dialogueParkedOnEntry = false   // 对话 entry parked a live thread; cancel resumes it
+
+    /// Commit any live conversation before quitting so a hidden or on-screen
+    /// thread isn't silently lost on ⌘Q (hide-preserve no longer commits;
+    /// suspended threads were already committed when parked).
+    func applicationWillTerminate(_ notification: Notification) {
+        if conversation != nil {
+            flushLiveConversationTurn()
+            commitConversation(updatePanel: false)
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Settings.migrateSecretsToKeychain()   // move any plaintext keys into the Keychain first
@@ -1789,7 +1800,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         if remember { Settings.lastActionID = action.id }
-        // Entering 对话 over a live thread parks it as recoverable ("上个对话").
+        // Entering 对话 over a live thread parks it as recoverable ("上个对话");
+        // remember we did, so cancelling the dialogue brings it straight back.
+        dialogueParkedOnEntry = conversation != nil
         cancelActiveAction(suspend: conversation != nil)
         panel.model.active = action.id
         panel.model.canCompare = false
@@ -1803,6 +1816,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// the user committing turn 0 of a 对话 thread.
     private func cancelDialogueInput() {
         panel.model.dialogueInstruction = ""
+        // If we parked a live thread to open this dialogue, bring it back instead
+        // of dropping to the toolbar (otherwise the 「上个对话」 affordance vanishes).
+        if dialogueParkedOnEntry, !suspendedThreads.isEmpty {
+            dialogueParkedOnEntry = false
+            resumeSuspendedThread()
+            return
+        }
+        dialogueParkedOnEntry = false
         panel.model.active = nil
         panel.model.phase = .idle
     }
@@ -1821,6 +1842,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let selectedText = currentText
         let provider = Settings.llmProvider(for: action)
         cancelActiveAction()
+        dialogueParkedOnEntry = false   // submitted, not cancelled — the parked thread stays as 「上个对话」
 
         let context = contextText(for: selectedText)
         currentContext = context

@@ -92,7 +92,8 @@ enum ActionResultLayout {
 
     /// Worst-case conversation panel height — used to reserve drop-down headroom.
     static func maxConversationPanelHeight(barHeight: CGFloat) -> CGFloat {
-        maxPanelHeight(barHeight: barHeight) + conversationViewportMaxHeight + 8 + followUpBarHeight + 8
+        maxPanelHeight(barHeight: barHeight) + conversationViewportMaxHeight + 8
+            + awaitingReplyBubbleHeight + 9 + followUpBarHeight + 8
     }
 }
 
