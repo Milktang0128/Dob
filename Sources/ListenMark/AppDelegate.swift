@@ -1039,6 +1039,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         flushLiveConversationTurn()
         guard let snap = captureCurrentOperation() else { return }
         historyBack.append(snap)
+        // Bound memory: drop the oldest beyond the cap, committing any conversation
+        // first so it lands in the Archive rather than vanishing from history.
+        while historyBack.count > 20 {
+            let dropped = historyBack.removeFirst()
+            if let state = dropped.conversation { commitThread(state) }
+        }
         historyForward.removeAll()
         syncHistoryButtons()
     }
@@ -1441,6 +1447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let shouldReuseBaseline = !reusableBaselineText.isEmpty
 
+        pushCurrentOperationToHistory()   // so ← returns to the result we compared from
         cancelActiveAction()
         let generation = actionGeneration
         let source = currentSource
