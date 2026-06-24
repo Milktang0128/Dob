@@ -305,7 +305,7 @@ struct ActionPanelView: View {
                     presentOriginalCopyBubble()
                 }
             } label: {
-                Image(systemName: "doc.on.doc")
+                Image(systemName: "doc.on.doc").frame(width: 18)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 26, height: 34)
@@ -629,7 +629,7 @@ struct ActionPanelView: View {
             if replay {
                 playbackButton
             }
-            Button { model.onStop?() } label: { Image(systemName: "stop.fill") }
+            Button { model.onStop?() } label: { Image(systemName: "stop.fill").frame(width: 18) }
                 .buttonStyle(.bordered)
                 .help(AppFlavor.text("停止", "Stop"))
             Button {
@@ -637,7 +637,7 @@ struct ActionPanelView: View {
                     presentResultCopyBubble()
                 }
             } label: {
-                Image(systemName: "doc.on.doc")
+                Image(systemName: "doc.on.doc").frame(width: 18)
             }
             .buttonStyle(.bordered)
             .help(AppFlavor.text("复制结果", "Copy Result"))
@@ -651,7 +651,7 @@ struct ActionPanelView: View {
             }
             if replay {
                 Button { if !archived { model.onArchive?() } } label: {
-                    Image(systemName: archived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
+                    Image(systemName: archived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down").frame(width: 18)
                 }
                 .buttonStyle(.bordered)
                 .tint(archived ? .accentColor : nil)   // neutral until saved, accent after
@@ -660,7 +660,7 @@ struct ActionPanelView: View {
             }
             if replay && model.canCompare && !model.isConversing {
                 Button { model.onCompare?() } label: {
-                    Image(systemName: "rectangle.split.3x1")
+                    Image(systemName: "rectangle.split.3x1").frame(width: 18)
                 }
                 .buttonStyle(.bordered)
                 .help(AppFlavor.text("比较模型结果", "Compare models"))
@@ -673,12 +673,14 @@ struct ActionPanelView: View {
                     followUpFocusRequest += 1
                 } label: {
                     Image(systemName: "bubble.left.and.text.bubble.right")
+                        .symbolRenderingMode(.monochrome)
+                        .frame(width: 18)
                 }
                 .buttonStyle(.bordered)
                 .help(AppFlavor.text("追问", "Follow up"))
             }
             Spacer()
-            Button { model.onClose?() } label: { Image(systemName: "xmark") }
+            Button { model.onClose?() } label: { Image(systemName: "xmark").frame(width: 18) }
                 .buttonStyle(.bordered).help(AppFlavor.text("关闭", "Close"))
         }
         .controlSize(.small)
@@ -722,7 +724,7 @@ struct ActionPanelView: View {
 
     private func compareControls(text: String, archived: Bool) -> some View {
         HStack(spacing: 7) {
-            Button { model.onStop?() } label: { Image(systemName: "stop.fill") }
+            Button { model.onStop?() } label: { Image(systemName: "stop.fill").frame(width: 18) }
                 .buttonStyle(.bordered)
                 .help(AppFlavor.text("停止", "Stop"))
             Button {
@@ -730,7 +732,7 @@ struct ActionPanelView: View {
                     presentResultCopyBubble()
                 }
             } label: {
-                Image(systemName: "doc.on.doc")
+                Image(systemName: "doc.on.doc").frame(width: 18)
             }
             .buttonStyle(.bordered)
             .help(AppFlavor.text("复制全部比较结果", "Copy All Compare Results"))
@@ -743,14 +745,14 @@ struct ActionPanelView: View {
                 }
             }
             Button { if !archived { model.onArchive?() } } label: {
-                Image(systemName: archived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
+                Image(systemName: archived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down").frame(width: 18)
             }
             .buttonStyle(.bordered)
             .tint(archived ? .accentColor : nil)
             .disabled(archived)
             .help(archived ? AppFlavor.text("已留档", "Saved") : AppFlavor.text("留档", "Save"))
             Spacer()
-            Button { model.onClose?() } label: { Image(systemName: "xmark") }
+            Button { model.onClose?() } label: { Image(systemName: "xmark").frame(width: 18) }
                 .buttonStyle(.bordered).help(AppFlavor.text("关闭", "Close"))
         }
         .controlSize(.small)
@@ -1069,7 +1071,7 @@ private struct ActionItem: View {
             HStack(spacing: 5) {
                 Image(systemName: def.icon)
                     .font(.system(size: 13, weight: .medium))
-                    .symbolRenderingMode(.hierarchical)
+                    .symbolRenderingMode(.monochrome)
                     .frame(width: 14)
                 Text(def.name).font(.system(size: 12)).lineLimit(1)
             }
