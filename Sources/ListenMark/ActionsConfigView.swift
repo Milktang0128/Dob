@@ -290,6 +290,7 @@ private struct ActionEditor: View {
     @State private var selectedProviderID: String
     @State private var optimizingPrompt = false
     @State private var optimizeError: String?
+    @State private var promptBeforeOptimization: String?
     var onSave: (ActionDef, String) -> Void
     var onCancel: () -> Void
 
@@ -385,6 +386,17 @@ private struct ActionEditor: View {
                         .controlSize(.small)
                         .disabled(optimizingPrompt || target.def.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .help(AppFlavor.text("用当前 AI 模型优化这个技能提示词", "Optimize this action prompt with the current AI model"))
+                        if let previous = promptBeforeOptimization {
+                            Button {
+                                target.def.prompt = previous
+                                promptBeforeOptimization = nil
+                            } label: {
+                                Image(systemName: "arrow.uturn.backward")
+                            }
+                            .controlSize(.small)
+                            .disabled(optimizingPrompt)
+                            .help(AppFlavor.text("撤回上次 AI 优化", "Undo last AI optimization"))
+                        }
                     }
                     TextEditor(text: $target.def.prompt)
                         .font(.system(size: 12))
@@ -439,12 +451,17 @@ private struct ActionEditor: View {
 
                                                         \(AppFlavor.text("当前提示词", "Current prompt"))：
                                                         \(current)
+
+                                                        \(AppFlavor.text("请返回一条可直接保存的新提示词。", "Return one new prompt that can be saved directly."))
                                                         """,
                                                         provider: provider)
             let cleaned = cleanOptimizedPrompt(optimized)
             guard !cleaned.isEmpty else {
                 optimizeError = AppFlavor.text("模型没有返回可用的提示词。", "The model did not return a usable prompt.")
                 return
+            }
+            if cleaned != current {
+                promptBeforeOptimization = current
             }
             target.def.prompt = cleaned
         } catch {
@@ -453,37 +470,67 @@ private struct ActionEditor: View {
     }
 
     private func cleanOptimizedPrompt(_ value: String) -> String {
-        value
+        var text = value
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "`"))
+
+        var lines = text.components(separatedBy: "\n")
+        if lines.first?.trimmingCharacters(in: .whitespaces).hasPrefix("```") == true {
+            lines.removeFirst()
+        }
+        if lines.last?.trimmingCharacters(in: .whitespaces).hasPrefix("```") == true {
+            lines.removeLast()
+        }
+        text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let prefixes = [
+            "优化后的提示词：", "优化后提示词：", "新提示词：", "提示词：",
+            "Optimized prompt:", "New prompt:", "Prompt:"
+        ]
+        var didStripPrefix = true
+        while didStripPrefix {
+            didStripPrefix = false
+            for prefix in prefixes where text.lowercased().hasPrefix(prefix.lowercased()) {
+                text = String(text.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                didStripPrefix = true
+            }
+        }
+
+        for pair in [("“", "”"), ("\"", "\""), ("'", "'"), ("「", "」")] where text.hasPrefix(pair.0) && text.hasSuffix(pair.1) {
+            text.removeFirst(pair.0.count)
+            text.removeLast(pair.1.count)
+            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        text = text.replacingOccurrences(of: #"(?m)^\s*[-*•]\s*"#,
+                                         with: "",
+                                         options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?m)^\s*\d+[\.)、]\s*"#,
+                                         with: "",
+                                         options: .regularExpression)
+        return text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static var promptOptimizerSystemPrompt: String {
         AppFlavor.text(
             """
-            你是 Dob 的技能提示词优化器。Dob 是一款“过耳不忘的 AI 读写工具”。你的任务是把用户现有的技能提示词改写得更清晰、稳定、适合处理被选中的文本。
+            你是 Dob 的技能提示词架构师。Dob 会把这条提示词作为系统提示词，用来处理用户当前选中的文本；有时还会附带来源信息或全文上下文。
 
-            优化原则：
-            保留原意，不新增用户没有要求的任务。
-            明确模型应该如何处理「选中内容」。
-            如果任务可能使用全文上下文，要说明全文上下文只作为理解选中内容的参考，除非任务本身要求概括全文。
-            输出应适合后续语音朗读：要求模型返回自然口语化纯文本，不要 Markdown、表格、列表符号或多余客套。
-            提示词要简洁但足够明确，通常一段话即可。
+            请把用户现有提示词重写成一条可直接保存的新版提示词。必须保留原任务，不新增新任务；明确处理对象是「选中内容」；说明上下文只用于理解选中内容，除非原任务要求处理全文；写清输出形态、风格、边界和禁止项。结果要适合语音朗读：要求自然纯文本，不要 Markdown、标题、表格、列表符号、客套话、思考过程或解释优化过程。
 
-            只输出优化后的提示词本身，不要解释，不要加标题。
+            输出一段完整提示词，通常 2 到 5 句。只输出提示词本身，不要标题、引号、说明或代码围栏。
             """,
             """
-            You are the Dob action prompt optimizer. Rewrite the user's existing prompt so it is clearer, more reliable, and well suited for processing selected text.
+            You are the Dob action prompt architect. Dob will save this as a system prompt for processing the user's currently selected text. Source metadata or full-text context may also be attached.
 
-            Principles:
-            Preserve the user's original intent and do not add new tasks.
-            Make it explicit how the model should handle the selected text.
-            If full-text context may be provided, say it is only reference material for understanding the selection unless the action explicitly asks for full-document summarization.
-            The model's answer will be spoken aloud, so require natural plain text with no Markdown, tables, bullet symbols, or unnecessary pleasantries.
-            Keep the prompt concise but specific, usually one paragraph.
+            Rewrite the existing prompt into one directly saveable prompt. Preserve the original task and do not add a new task. Make clear that the object is the selected text. State that context is only reference material for understanding the selection unless the original task asks to process the whole document. Specify the output shape, style, boundaries, and forbidden behavior. The result should be suitable for speech: natural plain text, no Markdown, headings, tables, bullet symbols, pleasantries, hidden reasoning, or explanation of the optimization.
 
-            Output only the optimized prompt itself. Do not explain and do not add a title.
+            Output one complete prompt, usually two to five sentences. Return only the prompt itself: no title, quotes, explanation, or code fence.
             """
         )
     }
