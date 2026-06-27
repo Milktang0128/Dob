@@ -16,6 +16,7 @@ final class ActionPanel: NSPanel {
     private let barHeight: CGFloat = 40
     private var currentWidth: CGFloat = 320
     private var keyboardFocusAllowed = false
+    private var growsUpward = false   // result card expands upward (panel placed above the selection)
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 320, height: 40),
@@ -131,6 +132,7 @@ final class ActionPanel: NSPanel {
     /// at the captured top.y makes the restored panel reappear exactly where it
     /// was hidden, regardless of how its height changed in the meantime.
     func anchorTopLeft(_ topLeft: NSPoint) {
+        growsUpward = false   // a restored panel is re-seated top-anchored at its captured top
         var f = frame
         f.origin.x = topLeft.x
         f.origin.y = topLeft.y - f.height
@@ -141,10 +143,14 @@ final class ActionPanel: NSPanel {
         let w = width(for: phase)
         let h = height(for: phase)
         var f = frame
-        let top = f.maxY
-        f.size.height = h
         f.size.width = w
-        f.origin.y = top - h
+        if growsUpward {
+            f.size.height = h        // bottom edge fixed → card grows upward, away from the selection
+        } else {
+            let top = f.maxY         // top edge fixed → card grows downward
+            f.size.height = h
+            f.origin.y = top - h
+        }
         if let screen = NSScreen.screens.first(where: { $0.frame.intersects(f) }) ?? NSScreen.main {
             let vf = screen.visibleFrame
             if f.maxX > vf.maxX { f.origin.x = vf.maxX - f.width - 8 }
@@ -200,15 +206,22 @@ final class ActionPanel: NSPanel {
         setContentSize(size)
 
         let mouse = NSEvent.mouseLocation
+        growsUpward = false
         var origin = NSPoint(x: mouse.x + 10, y: mouse.y - 12 - size.height)
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         if let vf = screen?.visibleFrame {
             if origin.x + size.width > vf.maxX { origin.x = vf.maxX - size.width - 8 }
             if origin.x < vf.minX { origin.x = vf.minX + 8 }
-            // Leave headroom for the tallest result card below — including a
-            // full multi-turn conversation, which is the tallest state.
-            let maxExpansion = ActionResultLayout.maxConversationPanelHeight(barHeight: barHeight) - barHeight
-            if origin.y - maxExpansion < vf.minY { origin.y = mouse.y + 18 }
+            // Expand AWAY from the selection so the result card never covers it:
+            // grow downward when there's more room below the cursor, otherwise
+            // place above the cursor and grow upward (the card stays above the
+            // selection). The bar sits adjacent to the selection either way.
+            let roomBelow = (mouse.y - 12) - vf.minY
+            let roomAbove = vf.maxY - (mouse.y + 18)
+            if roomBelow < roomAbove {
+                origin.y = mouse.y + 18
+                growsUpward = true
+            }
         }
         setFrameOrigin(origin)
         if allowsKeyboardFocus {

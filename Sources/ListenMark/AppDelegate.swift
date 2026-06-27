@@ -814,8 +814,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !panel.model.pinned else { return }
         outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self, !self.panel.model.pinned else { return }
-            // Clicking outside hides-and-preserves (Bob-style keep-alive) rather
-            // than destroying — the session returns via ⌥⌘D / 「显示 Dob」.
+            // While reading aloud the panel is sticky: a click elsewhere / page
+            // switch must not interrupt playback or hide it. It can be covered by
+            // other windows; only ✕ stops and closes it.
+            if Speaker.shared.isPlaying || Speaker.shared.isPreparing { return }
+            // Otherwise clicking outside hides-and-preserves (Bob-style keep-alive)
+            // rather than destroying — the session returns via ⌃⇧D / 「显示 Dob」.
             self.hidePanel(preserve: true)
         }
         if Settings.autoDismissPanel {
