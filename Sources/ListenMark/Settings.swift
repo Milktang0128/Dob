@@ -303,7 +303,7 @@ enum Settings {
 
     // MARK: Speech engine
 
-    /// "local" (macOS), "volcano", "microsoft", "google", or "tencent".
+    /// "local" (macOS), "volcano", "microsoft", "google", "tencent", or "minimax".
     static var ttsEngine: String {
         get {
             let e = d.string(forKey: "ttsEngine") ?? ""
@@ -434,6 +434,41 @@ enum Settings {
     static var tencentTTSConfigured: Bool {
         !tencentTTSSecretId.isEmpty && !tencentTTSSecretKey.isEmpty && !tencentTTSHost.isEmpty && !tencentTTSRegion.isEmpty
     }
+
+    static var minimaxKey: String {
+        get { KeychainStore.get("minimaxKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "minimaxKey") }
+    }
+
+    /// Optional. The newer `api.minimaxi.com` T2A endpoint authenticates by
+    /// Bearer key alone; some accounts still pass a Group ID as a query param.
+    static var minimaxGroupId: String {
+        get { d.string(forKey: "minimaxGroupId") ?? "" }
+        set { d.set(newValue, forKey: "minimaxGroupId") }
+    }
+
+    static var minimaxModel: String {
+        get {
+            let v = d.string(forKey: "minimaxModel") ?? ""
+            return v.isEmpty ? "speech-02-hd" : v
+        }
+        set { d.set(newValue, forKey: "minimaxModel") }
+    }
+
+    static var minimaxVoice: String {
+        get {
+            let v = d.string(forKey: "minimaxVoice") ?? ""
+            return v.isEmpty ? AppFlavor.text("male-qn-qingse", "English_Graceful_Lady") : v
+        }
+        set { d.set(newValue, forKey: "minimaxVoice") }
+    }
+
+    static var minimaxSpeed: Double {
+        get { d.object(forKey: "minimaxSpeed") == nil ? 1.0 : d.double(forKey: "minimaxSpeed") }
+        set { d.set(newValue, forKey: "minimaxSpeed") }
+    }
+
+    static var minimaxConfigured: Bool { !minimaxKey.isEmpty }
 
     // MARK: Archive
 
@@ -623,7 +658,7 @@ enum Settings {
 
         let standaloneKeys = [
             "deepseekKey", "volcToken", "microsoftTTSKey", "googleTTSKey",
-            "tencentTTSSecretKey", "compareProvider1APIKey", "compareProvider2APIKey"
+            "tencentTTSSecretKey", "minimaxKey", "compareProvider1APIKey", "compareProvider2APIKey"
         ]
         for key in standaloneKeys {
             if let value = d.string(forKey: key), !value.isEmpty {

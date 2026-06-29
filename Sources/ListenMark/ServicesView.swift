@@ -9,6 +9,8 @@ struct ServicesView: View {
     private static let microsoftSpeechDocsURL = URL(string: "https://learn.microsoft.com/azure/ai-services/speech-service/language-support")!
     private static let googleSpeechDocsURL = URL(string: "https://cloud.google.com/text-to-speech/docs/list-voices-and-types")!
     private static let tencentSpeechDocsURL = URL(string: "https://cloud.tencent.com/document/product/1073/92668")!
+    private static let minimaxConsoleURL = URL(string: "https://platform.minimaxi.com")!
+    private static let minimaxSpeechDocsURL = URL(string: "https://platform.minimaxi.com/docs/api-reference/speech-t2a-http")!
 
     private enum Category: String, CaseIterable, Identifiable, Hashable {
         case speech
@@ -43,6 +45,7 @@ struct ServicesView: View {
         case microsoftSpeech
         case googleSpeech
         case tencentSpeech
+        case minimaxSpeech
     }
 
     private struct ServiceTestResult: Equatable {
@@ -82,6 +85,11 @@ struct ServicesView: View {
     @AppStorage("tencentTTSRegion") private var tencentTTSRegion = "ap-guangzhou"
     @AppStorage("tencentTTSVoice") private var tencentTTSVoice = AppFlavor.text("1001", "1050")
     @AppStorage("tencentTTSSpeed") private var tencentTTSSpeed = 0.0
+    @State private var minimaxKey = Settings.minimaxKey         // Keychain-backed
+    @AppStorage("minimaxGroupId") private var minimaxGroupId = ""
+    @AppStorage("minimaxModel") private var minimaxModel = "speech-02-hd"
+    @AppStorage("minimaxVoice") private var minimaxVoice = AppFlavor.text("male-qn-qingse", "English_Graceful_Lady")
+    @AppStorage("minimaxSpeed") private var minimaxSpeed = 1.0
     @AppStorage("rate") private var rate = Double(AVSpeechUtteranceDefaultSpeechRate)
 
     private var compareCount: Int {
@@ -111,6 +119,10 @@ struct ServicesView: View {
         !tencentTTSRegion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var minimaxConfigured: Bool {
+        !minimaxKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -136,6 +148,7 @@ struct ServicesView: View {
         .onChange(of: microsoftTTSKey) { _, v in Settings.microsoftTTSKey = v }
         .onChange(of: googleTTSKey) { _, v in Settings.googleTTSKey = v }
         .onChange(of: tencentTTSSecretKey) { _, v in Settings.tencentTTSSecretKey = v }
+        .onChange(of: minimaxKey) { _, v in Settings.minimaxKey = v }
     }
 
     private var header: some View {
@@ -253,6 +266,13 @@ struct ServicesView: View {
                         selected: selection == .tencentSpeech) {
                         selection = .tencentSpeech
                     }
+                    row(title: AppFlavor.text("MiniMax 语音合成", "MiniMax Speech"),
+                        subtitle: minimaxVoice,
+                        icon: "waveform.circle",
+                        badge: speechBadge(engine: "minimax", configured: minimaxConfigured),
+                        selected: selection == .minimaxSpeech) {
+                        selection = .minimaxSpeech
+                    }
                 }
             }
             .padding(16)
@@ -281,6 +301,8 @@ struct ServicesView: View {
                     googleSpeechDetail
                 case .tencentSpeech:
                     tencentSpeechDetail
+                case .minimaxSpeech:
+                    minimaxSpeechDetail
                 }
             }
             .padding(24)
@@ -664,6 +686,72 @@ struct ServicesView: View {
                                           "SecretId, SecretKey, Host, and Region are required before this service can be enabled."))
                     .foregroundStyle(.orange)
             }
+        }
+    }
+
+    private var minimaxSpeechDetail: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: AppFlavor.text("MiniMax 语音合成", "MiniMax Speech"),
+                         subtitle: AppFlavor.text("通过 MiniMax T2A v2 接口合成 MP3，音色自然、支持多语言。只需 API Key；Group ID 可选。长文本会自动切段顺序播放。",
+                                                  "Uses the MiniMax T2A v2 API to synthesize MP3 with natural multilingual voices. Only an API key is required; Group ID is optional. Long text is split into sequential chunks."),
+                         icon: "waveform.circle",
+                         status: speechBadge(engine: "minimax", configured: minimaxConfigured))
+            Button {
+                ttsEngine = "minimax"
+            } label: {
+                Label(AppFlavor.text("设为当前语音服务", "Use as current speech service"), systemImage: "checkmark.circle")
+            }
+            .disabled(ttsEngine == "minimax" || !minimaxConfigured)
+            serviceFields {
+                SecureField("API Key", text: $minimaxKey)
+                TextField(AppFlavor.text("Group ID（可选）", "Group ID (optional)"), text: $minimaxGroupId)
+                Picker(AppFlavor.text("模型", "Model"), selection: $minimaxModel) {
+                    ForEach(MiniMaxModels.all, id: \.self) { m in
+                        Text(m).tag(m)
+                    }
+                    if !MiniMaxModels.all.contains(minimaxModel) {
+                        Text(AppFlavor.text("自定义（\(minimaxModel)）", "Custom (\(minimaxModel))")).tag(minimaxModel)
+                    }
+                }
+                Picker(AppFlavor.text("常用音色", "Common voice"), selection: $minimaxVoice) {
+                    ForEach(MiniMaxVoices.all) { voice in
+                        Text(voice.displayName).tag(voice.id)
+                    }
+                    if !MiniMaxVoices.all.contains(where: { $0.id == minimaxVoice }) {
+                        Text(AppFlavor.text("自定义（\(minimaxVoice)）", "Custom (\(minimaxVoice))")).tag(minimaxVoice)
+                    }
+                }
+                TextField(AppFlavor.text("自定义 voice_id（可选）", "Custom voice_id (optional)"), text: $minimaxVoice)
+                HStack {
+                    Text(AppFlavor.text("语速", "Speed"))
+                    Slider(value: $minimaxSpeed, in: 0.5...2.0)
+                    Text(String(format: "%.1fx", minimaxSpeed))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+            connectionTestRow(key: "tts-minimax",
+                              title: AppFlavor.text("检测接口", "Test API"),
+                              disabled: !minimaxConfigured) {
+                testSpeechConnection(key: "tts-minimax", provider: .minimax)
+            }
+            HStack {
+                Link(AppFlavor.text("MiniMax 控制台 ↗", "MiniMax console ↗"), destination: Self.minimaxConsoleURL)
+                Spacer()
+                Link(AppFlavor.text("接口文档 ↗", "API docs ↗"), destination: Self.minimaxSpeechDocsURL)
+            }
+            .font(.caption)
+            if !minimaxConfigured {
+                helperText(AppFlavor.text("未填 API Key 时，朗读会自动回退到 macOS 本地语音。",
+                                          "When the API key is missing, reading automatically falls back to macOS Speech."))
+                    .foregroundStyle(.orange)
+            }
+            Button(AppFlavor.text("试听", "Test Voice")) {
+                ttsEngine = "minimax"
+                Settings.speechRate = Float(rate)
+                Speaker.shared.speak(AppFlavor.text("Dob，这是当前 MiniMax 音色的试听效果。", "Dob. This is the current MiniMax voice."))
+            }
+            .disabled(!minimaxConfigured)
         }
     }
 
@@ -1059,6 +1147,7 @@ struct ServicesView: View {
         case "microsoft": return .microsoftSpeech
         case "google": return .googleSpeech
         case "tencent": return .tencentSpeech
+        case "minimax": return .minimaxSpeech
         default: return .localSpeech
         }
     }

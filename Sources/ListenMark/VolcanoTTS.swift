@@ -102,6 +102,37 @@ enum TencentVoices {
     ]
 }
 
+/// MiniMax T2A 模型。`speech-02-hd` 兼容性最好，作为默认；账号有权限时可选更新的版本。
+enum MiniMaxModels {
+    static let all: [String] = [
+        "speech-02-hd", "speech-02-turbo",
+        "speech-2.6-hd", "speech-2.6-turbo",
+        "speech-2.8-hd", "speech-2.8-turbo"
+    ]
+}
+
+/// MiniMax 系统音色（节选自官方音色库）。账号需有对应权限；也可在设置里手填任意 voice_id。
+enum MiniMaxVoices {
+    static let all: [TTSVoicePreset] = [
+        .init(id: "male-qn-qingse", name: AppFlavor.text("青涩青年 · 男声", "Qingse · male"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "male-qn-jingying", name: AppFlavor.text("精英青年 · 男声", "Elite youth · male"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "male-qn-badao", name: AppFlavor.text("霸道青年 · 男声", "Domineering · male"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "male-qn-daxuesheng", name: AppFlavor.text("青年大学生 · 男声", "College student · male"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "female-shaonv", name: AppFlavor.text("少女 · 女声", "Young girl · female"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "female-yujie", name: AppFlavor.text("御姐 · 女声", "Mature lady · female"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "female-chengshu", name: AppFlavor.text("成熟女性 · 女声", "Mature woman · female"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "female-tianmei", name: AppFlavor.text("甜美女性 · 女声", "Sweet woman · female"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "presenter_male", name: AppFlavor.text("男性主持人", "Male presenter"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "presenter_female", name: AppFlavor.text("女性主持人", "Female presenter"), note: AppFlavor.text("中文", "zh")),
+        .init(id: "audiobook_male_1", name: AppFlavor.text("有声书男声 1", "Audiobook male 1"), note: AppFlavor.text("中文·朗读", "zh reading")),
+        .init(id: "audiobook_male_2", name: AppFlavor.text("有声书男声 2", "Audiobook male 2"), note: AppFlavor.text("中文·朗读", "zh reading")),
+        .init(id: "audiobook_female_1", name: AppFlavor.text("有声书女声 1", "Audiobook female 1"), note: AppFlavor.text("中文·朗读", "zh reading")),
+        .init(id: "audiobook_female_2", name: AppFlavor.text("有声书女声 2", "Audiobook female 2"), note: AppFlavor.text("中文·朗读", "zh reading")),
+        .init(id: "English_Graceful_Lady", name: AppFlavor.text("English Graceful Lady · 英文女声", "English Graceful Lady"), note: "en"),
+        .init(id: "Cantonese_GentleLady", name: AppFlavor.text("粤语温柔女声", "Cantonese Gentle Lady"), note: AppFlavor.text("粤语", "yue"))
+    ]
+}
+
 enum VolcanoTTSError: Error {
     case notConfigured
     case http(Int, String)

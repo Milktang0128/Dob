@@ -29,6 +29,7 @@ enum CloudTTSProvider: String {
     case microsoft
     case google
     case tencent
+    case minimax
 
     var displayName: String {
         switch self {
@@ -36,6 +37,7 @@ enum CloudTTSProvider: String {
         case .microsoft: return AppFlavor.text("Microsoft 语音合成", "Microsoft Speech")
         case .google: return AppFlavor.text("Google 语音合成", "Google Text-to-Speech")
         case .tencent: return AppFlavor.text("腾讯云语音合成", "Tencent Cloud TTS")
+        case .minimax: return AppFlavor.text("MiniMax 语音合成", "MiniMax Speech")
         }
     }
 
@@ -45,6 +47,7 @@ enum CloudTTSProvider: String {
         case .microsoft: return Settings.microsoftTTSConfigured
         case .google: return Settings.googleTTSConfigured
         case .tencent: return Settings.tencentTTSConfigured
+        case .minimax: return Settings.minimaxConfigured
         }
     }
 
@@ -59,6 +62,8 @@ enum CloudTTSProvider: String {
             return hasCJK ? 800 : 1_800
         case .tencent:
             return hasCJK ? 140 : 450
+        case .minimax:
+            return hasCJK ? 800 : 1_800
         }
     }
 
@@ -72,6 +77,8 @@ enum CloudTTSProvider: String {
             return try await GoogleTTS.synthesize(text)
         case .tencent:
             return try await TencentTTS.synthesize(text)
+        case .minimax:
+            return try await MiniMaxTTS.synthesize(text)
         }
     }
 }
@@ -319,6 +326,73 @@ private struct TencentTextToVoiceResponse: Decodable {
     }
 }
 
+/// MiniMax T2A v2 — HTTP non-streaming `/v1/t2a_v2`. Auth is `Bearer {key}`;
+/// the response carries hex-encoded MP3 in `data.audio`, and success is
+/// `base_resp.status_code == 0`. Group ID is optional (newer endpoint omits it).
+private enum MiniMaxTTS {
+    static func synthesize(_ text: String) async throws -> Data {
+        let key = Settings.minimaxKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { throw CloudTTSError.notConfigured("MiniMax") }
+
+        var model = Settings.minimaxModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if model.isEmpty { model = "speech-02-hd" }
+        let voice = Settings.minimaxVoice.trimmingCharacters(in: .whitespacesAndNewlines)
+        let groupId = Settings.minimaxGroupId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var urlString = "https://api.minimaxi.com/v1/t2a_v2"
+        if !groupId.isEmpty,
+           let escaped = groupId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            urlString += "?GroupId=\(escaped)"
+        }
+        guard let url = URL(string: urlString) else { throw CloudTTSError.invalidEndpoint("MiniMax") }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "model": model,
+            "text": text,
+            "stream": false,
+            "output_format": "hex",
+            "voice_setting": [
+                "voice_id": voice,
+                "speed": Settings.minimaxSpeed,
+                "vol": 1.0,
+                "pitch": 0
+            ],
+            "audio_setting": [
+                "sample_rate": 32000,
+                "bitrate": 128000,
+                "format": "mp3",
+                "channel": 1
+            ]
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard let http = resp as? HTTPURLResponse else { throw CloudTTSError.noAudio("MiniMax") }
+        guard (200..<300).contains(http.statusCode) else {
+            throw CloudTTSError.http("MiniMax", http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CloudTTSError.noAudio("MiniMax")
+        }
+        if let base = obj["base_resp"] as? [String: Any],
+           let code = base["status_code"] as? Int, code != 0 {
+            let msg = (base["status_msg"] as? String) ?? AppFlavor.text("未知错误", "Unknown error")
+            throw CloudTTSError.api("MiniMax", "\(code): \(msg)")
+        }
+        guard let payload = obj["data"] as? [String: Any],
+              let hex = payload["audio"] as? String,
+              let audio = Data(hexEncoded: hex), !audio.isEmpty else {
+            throw CloudTTSError.noAudio("MiniMax")
+        }
+        return audio
+    }
+}
+
 private enum TTSChunker {
     static func chunks(_ text: String, maxCharacters: Int?) -> [String] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -383,6 +457,30 @@ private extension String {
 }
 
 private extension Data {
+    /// Decode a hex string (e.g. MiniMax's `data.audio`) into bytes. Returns nil
+    /// on odd length or any non-hex character.
+    init?(hexEncoded hex: String) {
+        let utf8 = Array(hex.utf8)
+        guard utf8.count % 2 == 0 else { return nil }
+        func value(_ b: UInt8) -> UInt8? {
+            switch b {
+            case 0x30...0x39: return b - 0x30        // 0-9
+            case 0x41...0x46: return b - 0x41 + 10   // A-F
+            case 0x61...0x66: return b - 0x61 + 10   // a-f
+            default: return nil
+            }
+        }
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(utf8.count / 2)
+        var i = 0
+        while i < utf8.count {
+            guard let hi = value(utf8[i]), let lo = value(utf8[i + 1]) else { return nil }
+            bytes.append(hi << 4 | lo)
+            i += 2
+        }
+        self.init(bytes)
+    }
+
     var sha256Hex: String {
         Data(SHA256.hash(data: self)).hexString
     }
