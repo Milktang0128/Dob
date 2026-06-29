@@ -344,7 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                           keyCode: UInt32(Settings.restoreHotKeyCode),
                                           carbonModifiers: UInt32(Settings.restoreHotKeyMods),
                                           onFire: { [weak self] in
-            self?.restorePanel()
+            self?.toggleRestorePanel()
         }) {
             NSLog("Dob · \(AppFlavor.text("显示面板快捷键注册失败", "restore panel hotkey registration failed"))：\(Settings.restoreHotKeyDisplay)")
         }
@@ -901,6 +901,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// call showNearMouse (which resets phase/active/pinned and would destroy the
     /// state being restored): it rehydrates every scalar + panel-model field, then
     /// re-runs the resize y-clamp so a bottom-anchored long conversation still fits.
+    /// The restore hotkey (⌃⇧D by default) is a Raycast-style toggle: if the
+    /// panel is already on screen, press hides-and-preserves it — it must NEVER
+    /// fall through to a fresh capture that overwrites the live content. Only when
+    /// the panel is hidden does it restore the preserved session (or, with nothing
+    /// to restore, fall back to a fresh capture).
+    private func toggleRestorePanel() {
+        if panel.isVisible {
+            hidePanel(preserve: true)
+        } else {
+            restorePanel()
+        }
+    }
+
     private func restorePanel() {
         guard let s = preservedSession else {
             // No snapshot — fall back to a fresh capture so the hotkey still does
