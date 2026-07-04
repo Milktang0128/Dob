@@ -793,6 +793,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func showPanel(minWidth: CGFloat = 320, allowsKeyboardFocus: Bool = false) {
         panelIsFadingOut = false
+        panel.level = .floating
         panel.showNearMouse(minWidth: minWidth, allowsKeyboardFocus: allowsKeyboardFocus)
         panel.model.canCompare = false
         panel.model.selectedCompareID = nil
@@ -943,6 +944,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // jumping toward the menu bar off a stale frame height.
         panel.anchorTopLeft(s.frameTopLeft)
         panel.requestKeyboardFocus()
+        panel.level = .floating
         panel.orderFrontRegardless()
 
         // `restoreOperation` already drove the phase (via syncConversationToPanel
@@ -2252,6 +2254,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        keepPanelBehindAppWindow(window)
+    }
+
+    private func keepPanelBehindAppWindow(_ window: NSWindow?) {
+        guard let window, panel.isVisible else { return }
+        panel.level = .normal
+        panel.order(.below, relativeTo: window.windowNumber)
     }
 
     @objc private func openArchive() {
@@ -2290,6 +2299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsWindow?.setContentSize(size)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+        keepPanelBehindAppWindow(settingsWindow)
     }
 
     @objc private func openReview() {

@@ -237,6 +237,7 @@ struct ActionPanelView: View {
     @State private var followUpFocusRequest = 0
     @AppStorage("autoSpeakAI") private var autoSpeakAI = true
     @AppStorage("panelTextSizeDelta") private var panelTextSizeDelta = 0
+    @AppStorage("playbackSpeed") private var playbackSpeed = 1.0
 
     private var resultFontSize: CGFloat { CGFloat(13 + panelTextSizeDelta) }
 
@@ -632,6 +633,9 @@ struct ActionPanelView: View {
             Button { model.onStop?() } label: { Image(systemName: "stop.fill").frame(width: 18) }
                 .buttonStyle(.bordered)
                 .help(AppFlavor.text("停止", "Stop"))
+            if replay {
+                playbackSpeedMenu
+            }
             Button {
                 if model.onCopyResult?(text) == true {
                     presentResultCopyBubble()
@@ -687,6 +691,34 @@ struct ActionPanelView: View {
         .buttonBorderShape(.capsule)
     }
 
+    private var playbackSpeedMenu: some View {
+        Menu {
+            ForEach(playbackSpeedPresets, id: \.self) { speed in
+                Button {
+                    setPlaybackSpeed(speed)
+                } label: {
+                    Label(speedLabel(speed), systemImage: isCurrentPlaybackSpeed(speed) ? "checkmark" : "speedometer")
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "speedometer")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(speedLabel(currentPlaybackSpeed))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.primary)
+            .frame(width: 58, height: 22)
+            .background(Capsule().fill(Color.primary.opacity(0.08)))
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .help(AppFlavor.text("播放速度", "Playback Speed"))
+    }
+
     private var playbackButton: some View {
         Button {
             handlePlaybackButton()
@@ -720,6 +752,26 @@ struct ActionPanelView: View {
         if speaker.isPaused { return AppFlavor.text("继续", "Resume") }
         if speaker.isPreparing { return AppFlavor.text("正在生成语音，可用停止取消", "Preparing speech. Use Stop to cancel.") }
         return AppFlavor.text("从头重听", "Replay from Start")
+    }
+
+    private var playbackSpeedPresets: [Double] { [0.8, 1.0, 1.25, 1.5, 2.0] }
+    private var currentPlaybackSpeed: Double { Double(Settings.playbackSpeed) }
+
+    private func speedLabel(_ speed: Double) -> String {
+        if abs(speed - 1.0) < 0.01 { return "1x" }
+        if abs(speed.rounded() - speed) < 0.01 { return String(format: "%.0fx", speed) }
+        if abs((speed * 10).rounded() / 10 - speed) < 0.01 { return String(format: "%.1fx", speed) }
+        return String(format: "%.2fx", speed)
+    }
+
+    private func isCurrentPlaybackSpeed(_ speed: Double) -> Bool {
+        abs(currentPlaybackSpeed - speed) < 0.01
+    }
+
+    private func setPlaybackSpeed(_ speed: Double) {
+        playbackSpeed = speed
+        Settings.playbackSpeed = Float(speed)
+        Speaker.shared.refreshPlaybackRate()
     }
 
     private func compareControls(text: String, archived: Bool) -> some View {

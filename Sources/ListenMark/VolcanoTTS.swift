@@ -111,25 +111,77 @@ enum MiniMaxModels {
     ]
 }
 
-/// MiniMax 系统音色（节选自官方音色库）。账号需有对应权限；也可在设置里手填任意 voice_id。
+/// MiniMax 系统音色。中文列表排除官方标注 beta 的音色；账号需有对应权限，
+/// 也可在设置里手填任意 voice_id。
 enum MiniMaxVoices {
+    private static func zh(_ id: String, _ name: String, _ englishName: String) -> TTSVoicePreset {
+        TTSVoicePreset(id: id, name: AppFlavor.text(name, englishName), note: AppFlavor.text("中文", "zh"))
+    }
+
+    private static func yue(_ id: String, _ name: String, _ englishName: String) -> TTSVoicePreset {
+        TTSVoicePreset(id: id, name: AppFlavor.text(name, englishName), note: AppFlavor.text("粤语", "yue"))
+    }
+
     static let all: [TTSVoicePreset] = [
-        .init(id: "male-qn-qingse", name: AppFlavor.text("青涩青年 · 男声", "Qingse · male"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "male-qn-jingying", name: AppFlavor.text("精英青年 · 男声", "Elite youth · male"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "male-qn-badao", name: AppFlavor.text("霸道青年 · 男声", "Domineering · male"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "male-qn-daxuesheng", name: AppFlavor.text("青年大学生 · 男声", "College student · male"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "female-shaonv", name: AppFlavor.text("少女 · 女声", "Young girl · female"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "female-yujie", name: AppFlavor.text("御姐 · 女声", "Mature lady · female"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "female-chengshu", name: AppFlavor.text("成熟女性 · 女声", "Mature woman · female"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "female-tianmei", name: AppFlavor.text("甜美女性 · 女声", "Sweet woman · female"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "presenter_male", name: AppFlavor.text("男性主持人", "Male presenter"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "presenter_female", name: AppFlavor.text("女性主持人", "Female presenter"), note: AppFlavor.text("中文", "zh")),
-        .init(id: "audiobook_male_1", name: AppFlavor.text("有声书男声 1", "Audiobook male 1"), note: AppFlavor.text("中文·朗读", "zh reading")),
-        .init(id: "audiobook_male_2", name: AppFlavor.text("有声书男声 2", "Audiobook male 2"), note: AppFlavor.text("中文·朗读", "zh reading")),
-        .init(id: "audiobook_female_1", name: AppFlavor.text("有声书女声 1", "Audiobook female 1"), note: AppFlavor.text("中文·朗读", "zh reading")),
-        .init(id: "audiobook_female_2", name: AppFlavor.text("有声书女声 2", "Audiobook female 2"), note: AppFlavor.text("中文·朗读", "zh reading")),
-        .init(id: "English_Graceful_Lady", name: AppFlavor.text("English Graceful Lady · 英文女声", "English Graceful Lady"), note: "en"),
-        .init(id: "Cantonese_GentleLady", name: AppFlavor.text("粤语温柔女声", "Cantonese Gentle Lady"), note: AppFlavor.text("粤语", "yue"))
+        zh("male-qn-qingse", "青涩青年音色", "Qingse Youth"),
+        zh("male-qn-jingying", "精英青年音色", "Elite Youth"),
+        zh("male-qn-badao", "霸道青年音色", "Domineering Youth"),
+        zh("male-qn-daxuesheng", "青年大学生音色", "College Student"),
+        zh("female-shaonv", "少女音色", "Young Girl"),
+        zh("female-yujie", "御姐音色", "Mature Lady"),
+        zh("female-chengshu", "成熟女性音色", "Mature Woman"),
+        zh("female-tianmei", "甜美女性音色", "Sweet Woman"),
+        zh("clever_boy", "聪明男童", "Clever Boy"),
+        zh("cute_boy", "可爱男童", "Cute Boy"),
+        zh("lovely_girl", "萌萌女童", "Lovely Girl"),
+        zh("cartoon_pig", "卡通猪小琪", "Cartoon Pig"),
+        zh("bingjiao_didi", "病娇弟弟", "Yandere Younger Brother"),
+        zh("junlang_nanyou", "俊朗男友", "Handsome Boyfriend"),
+        zh("chunzhen_xuedi", "纯真学弟", "Innocent Junior"),
+        zh("lengdan_xiongzhang", "冷淡学长", "Reserved Senior"),
+        zh("badao_shaoye", "霸道少爷", "Domineering Young Master"),
+        zh("tianxin_xiaoling", "甜心小玲", "Sweet Xiaoling"),
+        zh("qiaopi_mengmei", "俏皮萌妹", "Playful Girl"),
+        zh("wumei_yujie", "妩媚御姐", "Charming Lady"),
+        zh("diadia_xuemei", "嗲嗲学妹", "Coquettish Junior"),
+        zh("danya_xuejie", "淡雅学姐", "Elegant Senior"),
+        zh("Chinese (Mandarin)_Reliable_Executive", "沉稳高管", "Reliable Executive"),
+        zh("Chinese (Mandarin)_News_Anchor", "新闻女声", "News Anchor"),
+        zh("Chinese (Mandarin)_Mature_Woman", "傲娇御姐", "Mature Woman"),
+        zh("Chinese (Mandarin)_Unrestrained_Young_Man", "不羁青年", "Unrestrained Young Man"),
+        zh("Arrogant_Miss", "嚣张小姐", "Arrogant Miss"),
+        zh("Robot_Armor", "机械战甲", "Robot Armor"),
+        zh("Chinese (Mandarin)_Kind-hearted_Antie", "热心大婶", "Kind-hearted Auntie"),
+        zh("Chinese (Mandarin)_HK_Flight_Attendant", "港普空姐", "HK Flight Attendant"),
+        zh("Chinese (Mandarin)_Humorous_Elder", "搞笑大爷", "Humorous Elder"),
+        zh("Chinese (Mandarin)_Gentleman", "温润男声", "Gentleman"),
+        zh("Chinese (Mandarin)_Warm_Bestie", "温暖闺蜜", "Warm Bestie"),
+        zh("Chinese (Mandarin)_Male_Announcer", "播报男声", "Male Announcer"),
+        zh("Chinese (Mandarin)_Sweet_Lady", "甜美女声", "Sweet Lady"),
+        zh("Chinese (Mandarin)_Southern_Young_Man", "南方小哥", "Southern Young Man"),
+        zh("Chinese (Mandarin)_Wise_Women", "阅历姐姐", "Wise Woman"),
+        zh("Chinese (Mandarin)_Gentle_Youth", "温润青年", "Gentle Youth"),
+        zh("Chinese (Mandarin)_Warm_Girl", "温暖少女", "Warm Girl"),
+        zh("Chinese (Mandarin)_Kind-hearted_Elder", "花甲奶奶", "Kind-hearted Elder"),
+        zh("Chinese (Mandarin)_Cute_Spirit", "憨憨萌兽", "Cute Spirit"),
+        zh("Chinese (Mandarin)_Radio_Host", "电台男主播", "Radio Host"),
+        zh("Chinese (Mandarin)_Lyrical_Voice", "抒情男声", "Lyrical Voice"),
+        zh("Chinese (Mandarin)_Straightforward_Boy", "率真弟弟", "Straightforward Boy"),
+        zh("Chinese (Mandarin)_Sincere_Adult", "真诚青年", "Sincere Adult"),
+        zh("Chinese (Mandarin)_Gentle_Senior", "温柔学姐", "Gentle Senior"),
+        zh("Chinese (Mandarin)_Stubborn_Friend", "嘴硬竹马", "Stubborn Friend"),
+        zh("Chinese (Mandarin)_Crisp_Girl", "清脆少女", "Crisp Girl"),
+        zh("Chinese (Mandarin)_Pure-hearted_Boy", "清澈邻家弟弟", "Pure-hearted Boy"),
+        zh("Chinese (Mandarin)_Soft_Girl", "柔和少女", "Soft Girl"),
+        yue("Cantonese_ProfessionalHost（F)", "专业女主持", "Professional Host F"),
+        yue("Cantonese_GentleLady", "温柔女声", "Gentle Lady"),
+        yue("Cantonese_ProfessionalHost（M)", "专业男主持", "Professional Host M"),
+        yue("Cantonese_PlayfulMan", "活泼男声", "Playful Man"),
+        yue("Cantonese_CuteGirl", "可爱女孩", "Cute Girl"),
+        yue("Cantonese_KindWoman", "善良女声", "Kind Woman"),
+        .init(id: "English_Graceful_Lady",
+              name: AppFlavor.text("English Graceful Lady · 英文女声", "English Graceful Lady"),
+              note: "en")
     ]
 }
 

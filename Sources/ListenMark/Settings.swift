@@ -499,6 +499,24 @@ enum Settings {
         set { d.set(newValue, forKey: "rate") }
     }
 
+    static var playbackSpeed: Float {
+        get {
+            guard d.object(forKey: "playbackSpeed") != nil else { return 1.0 }
+            return clampedPlaybackSpeed(d.float(forKey: "playbackSpeed"))
+        }
+        set { d.set(clampedPlaybackSpeed(newValue), forKey: "playbackSpeed") }
+    }
+
+    static var effectiveSpeechRate: Float {
+        min(max(speechRate * playbackSpeed,
+                AVSpeechUtteranceMinimumSpeechRate),
+            AVSpeechUtteranceMaximumSpeechRate)
+    }
+
+    private static func clampedPlaybackSpeed(_ value: Float) -> Float {
+        min(max(value, 0.8), 2.0)
+    }
+
     // MARK: Trigger
 
     static var autoPop: Bool {

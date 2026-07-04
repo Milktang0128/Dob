@@ -148,12 +148,17 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
         setStatus(.idle)
     }
 
+    func refreshPlaybackRate() {
+        player?.enableRate = true
+        player?.rate = Settings.playbackSpeed
+    }
+
     // MARK: Internals
 
     private func utterance(for t: String) -> AVSpeechUtterance {
         let u = AVSpeechUtterance(string: t)
         u.voice = AVSpeechSynthesisVoice(language: t.containsCJK ? "zh-CN" : "en-US")
-        u.rate = Settings.speechRate
+        u.rate = Settings.effectiveSpeechRate
         return u
     }
 
@@ -292,6 +297,8 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
         do {
             let p = try AVAudioPlayer(data: data)
             p.delegate = self
+            p.enableRate = true
+            p.rate = Settings.playbackSpeed
             player = p
             onFinishPlay = done
             p.play()
