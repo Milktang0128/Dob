@@ -50,6 +50,16 @@ enum SelectionGrabber {
         ContextSource(focused: focusedElement(), window: focusedWindow())
     }
 
+    static func selectedTextBounds(source: ContextSource? = nil) -> CGRect? {
+        guard let focused = source?.focused ?? focusedElement() else { return nil }
+        let focusedWindow = source?.window ?? focusedWindow()
+        for element in contextCandidates(startingAt: focused, focusedWindow: focusedWindow) {
+            guard let rect = selectedTextBounds(in: element) else { continue }
+            return normalizedScreenRect(fromAccessibilityRect: rect)
+        }
+        return nil
+    }
+
     static func grabAsync(allowCopyFallback: Bool = true, _ completion: @escaping (String?) -> Void) {
         if let ax = axSelectedText() { completion(ax); return }
         guard allowCopyFallback else { completion(nil); return }
@@ -167,6 +177,61 @@ enum SelectionGrabber {
         return (value as! AXUIElement)
     }
 
+    private static func selectedTextBounds(in element: AXUIElement) -> CGRect? {
+        var rangeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeValue) == .success,
+              let rangeValue,
+              CFGetTypeID(rangeValue) == AXValueGetTypeID() else { return nil }
+
+        let rangeAXValue = rangeValue as! AXValue
+        guard AXValueGetType(rangeAXValue) == .cfRange else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(rangeAXValue, .cfRange, &range),
+              range.length > 0 else { return nil }
+
+        var boundsValue: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element,
+                                                         kAXBoundsForRangeParameterizedAttribute as CFString,
+                                                         rangeAXValue,
+                                                         &boundsValue) == .success,
+              let boundsValue,
+              CFGetTypeID(boundsValue) == AXValueGetTypeID() else { return nil }
+
+        let boundsAXValue = boundsValue as! AXValue
+        guard AXValueGetType(boundsAXValue) == .cgRect else { return nil }
+        var rect = CGRect.zero
+        guard AXValueGetValue(boundsAXValue, .cgRect, &rect),
+              rect.isFinite,
+              rect.width > 1,
+              rect.height > 1 else { return nil }
+        return rect
+    }
+
+    private static func normalizedScreenRect(fromAccessibilityRect rect: CGRect) -> CGRect? {
+        let mouse = NSEvent.mouseLocation
+        var candidates: [CGRect] = []
+        for screen in NSScreen.screens {
+            let frame = screen.frame
+            let raw = rect
+            let flipped = CGRect(x: rect.origin.x,
+                                 y: frame.maxY - rect.maxY + frame.minY,
+                                 width: rect.width,
+                                 height: rect.height)
+            if raw.intersects(frame.insetBy(dx: -200, dy: -200)) { candidates.append(raw) }
+            if flipped.intersects(frame.insetBy(dx: -200, dy: -200)) { candidates.append(flipped) }
+        }
+        guard !candidates.isEmpty else { return nil }
+        return candidates.min { lhs, rhs in
+            distanceSquared(lhs.center, mouse) < distanceSquared(rhs.center, mouse)
+        }
+    }
+
+    private static func distanceSquared(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        return dx * dx + dy * dy
+    }
+
     private static func collectText(from element: AXUIElement, depth: Int, limit: Int, visited: inout Set<CFHashCode>) -> String {
         guard depth <= 7, limit > 0 else { return "" }
         let key = CFHash(element)
@@ -252,5 +317,16 @@ enum SelectionGrabber {
             !CharacterSet.whitespacesAndNewlines.contains($0)
         }
         return String(String.UnicodeScalarView(scalars))
+    }
+}
+
+private extension CGRect {
+    var center: CGPoint { CGPoint(x: midX, y: midY) }
+
+    var isFinite: Bool {
+        origin.x.isFinite &&
+        origin.y.isFinite &&
+        size.width.isFinite &&
+        size.height.isFinite
     }
 }

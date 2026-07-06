@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let panelAutoDismissInitialGrace: TimeInterval = 0.45
     private let panelAutoDismissDelay: TimeInterval = 0.36
     private var mouseUpMonitor: Any?
+    private var panelKeyMonitor: Any?
     private weak var triggerMenuItem: NSMenuItem?
     private var autoPopMouseDownLocation: NSPoint?
     private var autoPopDidDrag = false
@@ -90,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var currentText = ""
     private var currentContext = ""
     private var currentContextSource: SelectionGrabber.ContextSource?
+    private var currentSelectionBounds: CGRect?
     private var currentSource = ""
     private var currentSourceMetadata: SourceMetadata?
     private var currentResult = ""
@@ -470,6 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentText = clean
         currentContext = ""
         currentContextSource = contextSource
+        currentSelectionBounds = SelectionGrabber.selectedTextBounds(source: contextSource)
         currentContextUsed = false
         currentResult = ""
         pendingEntry = nil
@@ -480,6 +483,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lastAutoText = ""
         currentContext = ""
         currentContextSource = nil
+        currentSelectionBounds = nil
         currentSourceMetadata = nil
         currentContextUsed = false
     }
@@ -628,6 +632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.currentText = ""
                 self.currentContext = ""
                 self.currentContextSource = nil
+                self.currentSelectionBounds = nil
                 self.currentContextUsed = false
                 self.currentResult = ""
                 self.pendingEntry = nil
@@ -646,6 +651,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.currentText = clean
             self.currentContext = ""
             self.currentContextSource = nil
+            self.currentSelectionBounds = nil
             self.currentContextUsed = false
             self.currentResult = ""
             self.pendingEntry = nil
@@ -667,6 +673,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentText = ""
         currentContext = ""
         currentContextSource = nil
+        currentSelectionBounds = nil
         currentContextUsed = false
         currentResult = ""
         currentAction = nil
@@ -680,6 +687,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         beginNewRootSelection()
         let generation = actionGeneration
         let contextSource = SelectionGrabber.contextSource()
+        let selectionBounds = SelectionGrabber.selectedTextBounds(source: contextSource)
         captureCurrentSource(contextSource: contextSource)
         SelectionGrabber.grabAsync { [weak self] text in
             guard let self else { return }
@@ -688,6 +696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.currentText = ""
                 self.currentContext = ""
                 self.currentContextSource = nil
+                self.currentSelectionBounds = nil
                 self.currentContextUsed = false
                 self.showPanel()
                 if SelectionGrabber.isTrusted {
@@ -700,6 +709,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.currentText = text
             self.currentContext = ""
             self.currentContextSource = contextSource
+            self.currentSelectionBounds = selectionBounds
             self.currentContextUsed = false
             self.lastAutoText = text
             self.currentResult = ""
@@ -732,6 +742,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentText = text
         currentContext = ""
         currentContextSource = nil
+        currentSelectionBounds = nil
         currentContextUsed = false
         currentResult = ""
         currentAction = nil
@@ -794,7 +805,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func showPanel(minWidth: CGFloat = 320, allowsKeyboardFocus: Bool = false) {
         panelIsFadingOut = false
         panel.level = .floating
-        panel.showNearMouse(minWidth: minWidth, allowsKeyboardFocus: allowsKeyboardFocus)
+        panel.showNearMouse(minWidth: minWidth,
+                            allowsKeyboardFocus: allowsKeyboardFocus,
+                            avoiding: currentSelectionBounds)
         panel.model.canCompare = false
         panel.model.selectedCompareID = nil
         panel.model.disableAppName = currentDisableCandidate()?.appName
@@ -807,6 +820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func removeOutsideMonitor() {
         if let m = outsideMonitor { NSEvent.removeMonitor(m); outsideMonitor = nil }
         if let m = panelMotionMonitor { NSEvent.removeMonitor(m); panelMotionMonitor = nil }
+        if let m = panelKeyMonitor { NSEvent.removeMonitor(m); panelKeyMonitor = nil }
         cancelPanelAutoDismiss()
     }
 
@@ -823,11 +837,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // rather than destroying — the session returns via ⌃⇧D / 「显示 Dob」.
             self.hidePanel(preserve: true)
         }
+        panelKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleExternalKeyDown(event)
+        }
         if Settings.autoDismissPanel {
             panelMotionMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]) { [weak self] _ in
                 self?.handlePanelPointerMotion()
             }
         }
+    }
+
+    private func handleExternalKeyDown(_ event: NSEvent) {
+        guard panel.isVisible,
+              !panel.model.pinned,
+              currentContextSource != nil else { return }
+        let keyCode = Int(event.keyCode)
+        guard keyCode == kVK_Delete || keyCode == kVK_ForwardDelete else { return }
+        if Speaker.shared.isPlaying || Speaker.shared.isPreparing { return }
+        hidePanel(preserve: true)
     }
 
     private func togglePanelPin() {
@@ -1009,6 +1036,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentText = s.currentText
         currentContext = s.currentContext
         currentContextSource = s.currentContextSource
+        currentSelectionBounds = nil
         currentSource = s.currentSource
         currentSourceMetadata = s.currentSourceMetadata
         currentResult = s.currentResult
@@ -1279,6 +1307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// any hidden-panel snapshot.
     private func beginNewRootSelection() {
         currentSelectionToken = UUID()
+        currentSelectionBounds = nil
         preservedSession = nil
         pushCurrentOperationToHistory()
         cancelActiveAction()

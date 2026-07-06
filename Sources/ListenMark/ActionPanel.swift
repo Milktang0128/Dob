@@ -14,6 +14,8 @@ final class ActionPanel: NSPanel {
     private var keyMonitor: Any?
     private let minPanelWidth: CGFloat = 320
     private let barHeight: CGFloat = 40
+    private let placementGap: CGFloat = 10
+    private let screenPadding: CGFloat = 8
     private var currentWidth: CGFloat = 320
     private var keyboardFocusAllowed = false
     private var growsUpward = false   // result card expands upward (panel placed above the selection)
@@ -141,9 +143,21 @@ final class ActionPanel: NSPanel {
 
     private func resize(for phase: PanelModel.Phase) {
         let w = width(for: phase)
-        let h = height(for: phase)
+        let desiredHeight = height(for: phase)
         var f = frame
         f.size.width = w
+        let screen = NSScreen.screens.first(where: { $0.frame.intersects(f) }) ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame
+        let h: CGFloat
+        if let visibleFrame {
+            if growsUpward {
+                h = min(desiredHeight, max(barHeight, visibleFrame.maxY - f.minY - screenPadding))
+            } else {
+                h = min(desiredHeight, max(barHeight, f.maxY - visibleFrame.minY - screenPadding))
+            }
+        } else {
+            h = desiredHeight
+        }
         if growsUpward {
             f.size.height = h        // bottom edge fixed → card grows upward, away from the selection
         } else {
@@ -151,8 +165,7 @@ final class ActionPanel: NSPanel {
             f.size.height = h
             f.origin.y = top - h
         }
-        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(f) }) ?? NSScreen.main {
-            let vf = screen.visibleFrame
+        if let vf = visibleFrame {
             if f.maxX > vf.maxX { f.origin.x = vf.maxX - f.width - 8 }
             if f.minX < vf.minX { f.origin.x = vf.minX + 8 }
             if f.minY < vf.minY { f.origin.y = vf.minY + 8 }
@@ -194,7 +207,7 @@ final class ActionPanel: NSPanel {
         return max(minPanelWidth, ceil(w))
     }
 
-    func showNearMouse(minWidth: CGFloat = 320, allowsKeyboardFocus: Bool = false) {
+    func showNearMouse(minWidth: CGFloat = 320, allowsKeyboardFocus: Bool = false, avoiding avoidRect: CGRect? = nil) {
         alphaValue = 1
         model.phase = .idle
         model.active = nil
@@ -205,29 +218,109 @@ final class ActionPanel: NSPanel {
         let size = NSSize(width: currentWidth, height: barHeight)
         setContentSize(size)
 
-        let mouse = NSEvent.mouseLocation
-        growsUpward = false
-        var origin = NSPoint(x: mouse.x + 10, y: mouse.y - 12 - size.height)
-        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
-        if let vf = screen?.visibleFrame {
-            if origin.x + size.width > vf.maxX { origin.x = vf.maxX - size.width - 8 }
-            if origin.x < vf.minX { origin.x = vf.minX + 8 }
-            // Expand AWAY from the selection so the result card never covers it:
-            // grow downward when there's more room below the cursor, otherwise
-            // place above the cursor and grow upward (the card stays above the
-            // selection). The bar sits adjacent to the selection either way.
-            let roomBelow = (mouse.y - 12) - vf.minY
-            let roomAbove = vf.maxY - (mouse.y + 18)
-            if roomBelow < roomAbove {
-                origin.y = mouse.y + 18
-                growsUpward = true
-            }
-        }
-        setFrameOrigin(origin)
+        let placement = placement(for: size, avoiding: avoidRect)
+        growsUpward = placement.growsUpward
+        setFrameOrigin(placement.origin)
         if allowsKeyboardFocus {
             makeKeyAndOrderFront(nil)
         }
         orderFrontRegardless()
+    }
+
+    private func placement(for size: NSSize, avoiding avoidRect: CGRect?) -> (origin: NSPoint, growsUpward: Bool) {
+        let mouse = NSEvent.mouseLocation
+        guard let avoidRect,
+              let screen = screen(for: avoidRect, fallbackPoint: mouse) else {
+            return mousePlacement(for: size, mouse: mouse)
+        }
+
+        let visibleFrame = screen.visibleFrame
+        let clampedAvoidRect = avoidRect.intersection(visibleFrame.insetBy(dx: -screenPadding, dy: -screenPadding))
+        guard !clampedAvoidRect.isNull, clampedAvoidRect.width > 1, clampedAvoidRect.height > 1 else {
+            return mousePlacement(for: size, mouse: mouse)
+        }
+
+        return selectionPlacement(for: size, avoiding: clampedAvoidRect, in: visibleFrame)
+    }
+
+    private func selectionPlacement(for size: NSSize, avoiding rect: CGRect, in visibleFrame: CGRect) -> (origin: NSPoint, growsUpward: Bool) {
+        let aboveRoom = visibleFrame.maxY - rect.maxY - placementGap - screenPadding
+        let belowRoom = rect.minY - visibleFrame.minY - placementGap - screenPadding
+        let rightRoom = visibleFrame.maxX - rect.maxX - placementGap - screenPadding
+        let leftRoom = rect.minX - visibleFrame.minX - placementGap - screenPadding
+        let centeredX = clamp(rect.midX - size.width / 2,
+                              visibleFrame.minX + screenPadding,
+                              visibleFrame.maxX - size.width - screenPadding)
+
+        let verticalCandidates: [(room: CGFloat, origin: NSPoint, growsUpward: Bool)] = [
+            (aboveRoom, NSPoint(x: centeredX, y: rect.maxY + placementGap), true),
+            (belowRoom, NSPoint(x: centeredX, y: rect.minY - placementGap - size.height), false)
+        ].sorted { $0.room > $1.room }
+
+        if let candidate = verticalCandidates.first(where: { $0.room >= size.height }) {
+            return (candidate.origin, candidate.growsUpward)
+        }
+
+        let centeredY = clamp(rect.midY - size.height / 2,
+                              visibleFrame.minY + screenPadding,
+                              visibleFrame.maxY - size.height - screenPadding)
+        let horizontalCandidates: [(room: CGFloat, origin: NSPoint)] = [
+            (rightRoom, NSPoint(x: rect.maxX + placementGap, y: centeredY)),
+            (leftRoom, NSPoint(x: rect.minX - placementGap - size.width, y: centeredY))
+        ].sorted { $0.room > $1.room }
+
+        if let candidate = horizontalCandidates.first(where: { $0.room >= size.width }) {
+            return (candidate.origin, aboveRoom >= belowRoom)
+        }
+
+        if let candidate = verticalCandidates.first {
+            return (clampedOrigin(candidate.origin, size: size, in: visibleFrame), candidate.growsUpward)
+        }
+
+        return mousePlacement(for: size, mouse: NSEvent.mouseLocation)
+    }
+
+    private func mousePlacement(for size: NSSize, mouse: NSPoint) -> (origin: NSPoint, growsUpward: Bool) {
+        var origin = NSPoint(x: mouse.x + placementGap, y: mouse.y - 12 - size.height)
+        var expandUpward = false
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+        if let visibleFrame = screen?.visibleFrame {
+            origin = clampedOrigin(origin, size: size, in: visibleFrame)
+            let roomBelow = (mouse.y - 12) - visibleFrame.minY
+            let roomAbove = visibleFrame.maxY - (mouse.y + 18)
+            if roomBelow < roomAbove {
+                origin.y = mouse.y + 18
+                expandUpward = true
+                origin = clampedOrigin(origin, size: size, in: visibleFrame)
+            }
+        }
+        return (origin, expandUpward)
+    }
+
+    private func screen(for rect: CGRect, fallbackPoint: NSPoint) -> NSScreen? {
+        let intersecting = NSScreen.screens
+            .map { screen -> (screen: NSScreen, area: CGFloat) in
+                let intersection = screen.frame.intersection(rect)
+                let area = intersection.isNull ? 0 : intersection.width * intersection.height
+                return (screen, area)
+            }
+            .max { $0.area < $1.area }
+        if let intersecting, intersecting.area > 0 { return intersecting.screen }
+        return NSScreen.screens.first { $0.frame.contains(fallbackPoint) } ?? NSScreen.main
+    }
+
+    private func clampedOrigin(_ origin: NSPoint, size: NSSize, in visibleFrame: CGRect) -> NSPoint {
+        NSPoint(x: clamp(origin.x,
+                         visibleFrame.minX + screenPadding,
+                         visibleFrame.maxX - size.width - screenPadding),
+                y: clamp(origin.y,
+                         visibleFrame.minY + screenPadding,
+                         visibleFrame.maxY - size.height - screenPadding))
+    }
+
+    private func clamp(_ value: CGFloat, _ minValue: CGFloat, _ maxValue: CGFloat) -> CGFloat {
+        guard minValue <= maxValue else { return minValue }
+        return min(max(value, minValue), maxValue)
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
