@@ -17,6 +17,11 @@ enum SpeechPlaybackStatus: Equatable {
 final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = Speaker()
 
+    private struct QueuedCloudAudio {
+        let index: Int
+        let data: Data
+    }
+
     private let synth = AVSpeechSynthesizer()
     @Published private(set) var status: SpeechPlaybackStatus = .idle
     private var player: AVAudioPlayer?
@@ -25,13 +30,17 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private var streaming = false
     private var cloudQueue: [String] = []
-    private var cloudAudioQueue: [Data] = []
+    private var cloudAudioQueue: [QueuedCloudAudio] = []
     private var cloudSynthesizing = false
     private var cloudDraining = false
     private var activeCloudProvider: CloudTTSProvider?
     private var activeCloudGeneration = 0
     private var activeCacheText: String?
     private var activeGeneratedChunks: [Data] = []
+    private var currentCloudChunkIndex: Int?
+    private var replayAudioChunks: [Data] = []
+    private var currentReplayChunkIndex: Int?
+    private var replayingCachedAudio = false
     private var onFinishPlay: (() -> Void)?
     private var speechFinishTimer: Timer?
 
@@ -142,6 +151,10 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
         activeCloudProvider = nil
         activeCacheText = nil
         activeGeneratedChunks = []
+        currentCloudChunkIndex = nil
+        replayAudioChunks = []
+        currentReplayChunkIndex = nil
+        replayingCachedAudio = false
         onFinishPlay = nil
         speechFinishTimer?.invalidate()
         speechFinishTimer = nil
@@ -151,6 +164,19 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func refreshPlaybackRate() {
         player?.enableRate = true
         player?.rate = Settings.playbackSpeed
+    }
+
+    /// Moves through generated cloud audio without making another TTS request.
+    /// System speech has no seek API, so the UI enables this only for audio with
+    /// a real timeline.
+    func skip(by seconds: TimeInterval) {
+        guard abs(seconds) > 0.001, let player else { return }
+
+        if replayingCachedAudio, let index = currentReplayChunkIndex {
+            seekCachedAudio(from: player, index: index, by: seconds)
+        } else if let index = currentCloudChunkIndex {
+            seekLiveCloudAudio(from: player, index: index, by: seconds)
+        }
     }
 
     // MARK: Internals
@@ -212,11 +238,14 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 await MainActor.run {
                     guard self.playbackGeneration == self.activeCloudGeneration else { return }
                     self.cloudSynthesizing = false
+                    self.activeGeneratedChunks.append(data)
                     if let text = self.activeCacheText {
-                        self.activeGeneratedChunks.append(data)
                         self.lastGeneratedAudio = (text, self.activeGeneratedChunks, false)
                     }
-                    self.cloudAudioQueue.append(data)
+                    self.cloudAudioQueue.append(QueuedCloudAudio(
+                        index: self.activeGeneratedChunks.count - 1,
+                        data: data
+                    ))
                     self.playNextCloudChunkIfNeeded()
                     self.synthesizeNextCloudChunkIfNeeded()
                 }
@@ -247,10 +276,10 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
             finishCloudPipelineIfPossible()
             return
         }
-        let data = cloudAudioQueue.removeFirst()
+        let chunk = cloudAudioQueue.removeFirst()
         let label = activeCloudProvider?.displayName ?? AppFlavor.text("云语音", "Cloud Speech")
         setStatus(.playing(label))
-        playThen(data) { [weak self] in
+        playThen(chunk.data, chunkIndex: chunk.index) { [weak self] in
             self?.playNextCloudChunkIfNeeded()
         }
     }
@@ -281,27 +310,54 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     private func playSequence(_ chunks: [Data], _ done: @escaping () -> Void) {
-        var remaining = chunks
-        guard !remaining.isEmpty else {
+        guard !chunks.isEmpty else {
             setStatus(.idle)
             done()
             return
         }
-        let first = remaining.removeFirst()
-        playThen(first) { [weak self] in
-            self?.playSequence(remaining, done)
+        replayingCachedAudio = true
+        replayAudioChunks = chunks
+        playCachedChunk(at: 0, startingAt: 0, done: done)
+    }
+
+    private func playCachedChunk(at index: Int,
+                                 startingAt time: TimeInterval,
+                                 autoplay: Bool = true,
+                                 done: @escaping () -> Void) {
+        guard replayAudioChunks.indices.contains(index) else {
+            replayingCachedAudio = false
+            currentReplayChunkIndex = nil
+            setStatus(.idle)
+            done()
+            return
+        }
+        playThen(replayAudioChunks[index],
+                 startingAt: time,
+                 replayIndex: index,
+                 autoplay: autoplay) { [weak self] in
+            self?.playCachedChunk(at: index + 1, startingAt: 0, done: done)
         }
     }
 
-    private func playThen(_ data: Data, _ done: @escaping () -> Void) {
+    private func playThen(_ data: Data,
+                          startingAt time: TimeInterval = 0,
+                          chunkIndex: Int? = nil,
+                          replayIndex: Int? = nil,
+                          autoplay: Bool = true,
+                          _ done: @escaping () -> Void) {
         do {
             let p = try AVAudioPlayer(data: data)
             p.delegate = self
             p.enableRate = true
             p.rate = Settings.playbackSpeed
+            p.currentTime = min(max(time, 0), max(p.duration - 0.001, 0))
             player = p
+            currentCloudChunkIndex = chunkIndex
+            currentReplayChunkIndex = replayIndex
             onFinishPlay = done
-            p.play()
+            if autoplay {
+                p.play()
+            }
         } catch {
             NSLog("Dob · 音频播放失败：\(error)")
             done()
@@ -309,12 +365,95 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        if self.player === player {
-            self.player = nil
-        }
+        guard self.player === player else { return }
+        self.player = nil
+        currentCloudChunkIndex = nil
+        currentReplayChunkIndex = nil
         let done = onFinishPlay
         onFinishPlay = nil
         done?()
+    }
+
+    private func seekLiveCloudAudio(from player: AVAudioPlayer,
+                                    index: Int,
+                                    by seconds: TimeInterval) {
+        guard let target = targetPosition(in: activeGeneratedChunks,
+                                          currentIndex: index,
+                                          currentTime: player.currentTime,
+                                          currentDuration: player.duration,
+                                          by: seconds) else { return }
+        let shouldPlay = isPlaying
+        abandonCurrentPlayer()
+
+        // Requeue every generated chunk after the destination. The text queue
+        // remains intact, so chunks not synthesized yet still arrive normally.
+        cloudAudioQueue = activeGeneratedChunks.indices
+            .filter { $0 > target.index }
+            .map { QueuedCloudAudio(index: $0, data: activeGeneratedChunks[$0]) }
+        playThen(activeGeneratedChunks[target.index],
+                 startingAt: target.time,
+                 chunkIndex: target.index,
+                 autoplay: shouldPlay) { [weak self] in
+            self?.playNextCloudChunkIfNeeded()
+        }
+        restorePlaybackStatus(autoplay: shouldPlay)
+    }
+
+    private func seekCachedAudio(from player: AVAudioPlayer,
+                                 index: Int,
+                                 by seconds: TimeInterval) {
+        guard let target = targetPosition(in: replayAudioChunks,
+                                          currentIndex: index,
+                                          currentTime: player.currentTime,
+                                          currentDuration: player.duration,
+                                          by: seconds) else { return }
+        let shouldPlay = isPlaying
+        abandonCurrentPlayer()
+        playCachedChunk(at: target.index, startingAt: target.time, autoplay: shouldPlay) {}
+        restorePlaybackStatus(autoplay: shouldPlay)
+    }
+
+    private func targetPosition(in chunks: [Data],
+                                currentIndex: Int,
+                                currentTime: TimeInterval,
+                                currentDuration: TimeInterval,
+                                by seconds: TimeInterval) -> (index: Int, time: TimeInterval)? {
+        guard chunks.indices.contains(currentIndex) else { return nil }
+        let durations = chunks.enumerated().map { offset, data in
+            if offset == currentIndex { return currentDuration }
+            return (try? AVAudioPlayer(data: data))?.duration ?? 0
+        }
+        let total = durations.reduce(0, +)
+        guard total > 0 else { return nil }
+
+        let elapsed = durations.prefix(currentIndex).reduce(0, +) + currentTime
+        let destination = min(max(elapsed + seconds, 0), max(total - 0.001, 0))
+        var cursor: TimeInterval = 0
+        for (index, duration) in durations.enumerated() {
+            if destination < cursor + duration || index == durations.indices.last {
+                return (index, max(destination - cursor, 0))
+            }
+            cursor += duration
+        }
+        return nil
+    }
+
+    private func abandonCurrentPlayer() {
+        let active = player
+        player = nil
+        currentCloudChunkIndex = nil
+        currentReplayChunkIndex = nil
+        onFinishPlay = nil
+        active?.stop()
+    }
+
+    private func restorePlaybackStatus(autoplay: Bool) {
+        let label: String
+        switch status {
+        case .playing(let value), .paused(let value): label = value
+        default: label = AppFlavor.text("云语音", "Cloud Speech")
+        }
+        setStatus(autoplay ? .playing(label) : .paused(label))
     }
 
     private func monitorLocalSpeechCompletion() {
@@ -374,5 +513,9 @@ extension Speaker {
     var isPaused: Bool {
         if case .paused = status { return true }
         return false
+    }
+
+    var canSeek: Bool {
+        player != nil && (currentCloudChunkIndex != nil || currentReplayChunkIndex != nil)
     }
 }

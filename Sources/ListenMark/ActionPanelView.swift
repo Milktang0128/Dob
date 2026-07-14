@@ -630,6 +630,14 @@ struct ActionPanelView: View {
             if replay {
                 playbackButton
             }
+            if replay {
+                seekButton(seconds: -15,
+                           systemImage: "gobackward.15",
+                           help: AppFlavor.text("后退 15 秒", "Back 15 Seconds"))
+                seekButton(seconds: 15,
+                           systemImage: "goforward.15",
+                           help: AppFlavor.text("前进 15 秒", "Forward 15 Seconds"))
+            }
             Button { model.onStop?() } label: { Image(systemName: "stop.fill").frame(width: 18) }
                 .buttonStyle(.bordered)
                 .help(AppFlavor.text("停止", "Stop"))
@@ -689,6 +697,17 @@ struct ActionPanelView: View {
         }
         .controlSize(.small)
         .buttonBorderShape(.capsule)
+    }
+
+    private func seekButton(seconds: TimeInterval, systemImage: String, help: String) -> some View {
+        Button {
+            Speaker.shared.skip(by: seconds)
+        } label: {
+            Image(systemName: systemImage).frame(width: 18)
+        }
+        .buttonStyle(.bordered)
+        .disabled(!speaker.canSeek)
+        .help(speaker.canSeek ? help : AppFlavor.text("云端音频生成后可跳转", "Available for generated cloud audio"))
     }
 
     private var playbackSpeedMenu: some View {
