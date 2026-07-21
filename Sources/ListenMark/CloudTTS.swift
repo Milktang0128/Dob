@@ -26,6 +26,7 @@ enum CloudTTSError: Error, CustomStringConvertible {
 
 enum CloudTTSProvider: String {
     case volcano
+    case volcanoArk
     case microsoft
     case google
     case tencent
@@ -34,6 +35,7 @@ enum CloudTTSProvider: String {
     var displayName: String {
         switch self {
         case .volcano: return AppFlavor.text("火山引擎", "Volcengine")
+        case .volcanoArk: return AppFlavor.text("火山方舟语音合成", "Volcano Ark Speech")
         case .microsoft: return AppFlavor.text("Microsoft 语音合成", "Microsoft Speech")
         case .google: return AppFlavor.text("Google 语音合成", "Google Text-to-Speech")
         case .tencent: return AppFlavor.text("腾讯云语音合成", "Tencent Cloud TTS")
@@ -44,6 +46,7 @@ enum CloudTTSProvider: String {
     func isConfigured() -> Bool {
         switch self {
         case .volcano: return Settings.volcConfigured
+        case .volcanoArk: return Settings.volcArkConfigured
         case .microsoft: return Settings.microsoftTTSConfigured
         case .google: return Settings.googleTTSConfigured
         case .tencent: return Settings.tencentTTSConfigured
@@ -54,7 +57,7 @@ enum CloudTTSProvider: String {
     func maxCharacters(for text: String) -> Int? {
         let hasCJK = text.containsCJK
         switch self {
-        case .volcano:
+        case .volcano, .volcanoArk:
             return hasCJK ? 500 : 1_200
         case .microsoft:
             return hasCJK ? 800 : 1_800
@@ -71,6 +74,8 @@ enum CloudTTSProvider: String {
         switch self {
         case .volcano:
             return try await VolcanoTTS.synthesize(text)
+        case .volcanoArk:
+            return try await VolcanoArkTTS.synthesize(text)
         case .microsoft:
             return try await MicrosoftTTS.synthesize(text)
         case .google:
@@ -351,17 +356,23 @@ private enum MiniMaxTTS {
         req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        // Without an explicit emotion, MiniMax infers one from the text itself,
+        // which reads as noticeably dramatic for explanatory AI output — pin a
+        // flat, calm delivery instead.
+        let voiceSetting: [String: Any] = [
+            "voice_id": voice,
+            "speed": Settings.minimaxSpeed,
+            "vol": 1.0,
+            "pitch": 0,
+            "emotion": "calm"
+        ]
+
         let body: [String: Any] = [
             "model": model,
             "text": text,
             "stream": false,
             "output_format": "hex",
-            "voice_setting": [
-                "voice_id": voice,
-                "speed": Settings.minimaxSpeed,
-                "vol": 1.0,
-                "pitch": 0
-            ],
+            "voice_setting": voiceSetting,
             "audio_setting": [
                 "sample_rate": 32000,
                 "bitrate": 128000,

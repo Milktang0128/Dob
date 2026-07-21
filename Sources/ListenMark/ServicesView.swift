@@ -11,6 +11,8 @@ struct ServicesView: View {
     private static let tencentSpeechDocsURL = URL(string: "https://cloud.tencent.com/document/product/1073/92668")!
     private static let minimaxConsoleURL = URL(string: "https://platform.minimaxi.com")!
     private static let minimaxSpeechDocsURL = URL(string: "https://platform.minimaxi.com/docs/api-reference/speech-t2a-http")!
+    private static let volcArkKeyConsoleURL = URL(string: "https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&OpenModelVisible=false&advancedActiveKey=agentPlan")!
+    private static let volcArkSpeechDocsURL = URL(string: "https://www.volcengine.com/docs/6561/1598757?lang=zh")!
 
     private enum Category: String, CaseIterable, Identifiable, Hashable {
         case speech
@@ -42,6 +44,7 @@ struct ServicesView: View {
         case systemOCR
         case localSpeech
         case volcanoSpeech
+        case volcanoArkSpeech
         case microsoftSpeech
         case googleSpeech
         case tencentSpeech
@@ -73,6 +76,10 @@ struct ServicesView: View {
     @AppStorage("volcCluster") private var volcCluster = "volcano_tts"
     @AppStorage("volcVoice") private var volcVoice = AppFlavor.text("zh_female_cancan_uranus_bigtts", "en_female_dacey_uranus_bigtts")
     @AppStorage("volcSpeed") private var volcSpeed = 1.0
+    @State private var volcArkKey = Settings.volcArkKey         // Keychain-backed
+    @AppStorage("volcArkResourceId") private var volcArkResourceId = "seed-tts-2.0"
+    @AppStorage("volcArkVoice") private var volcArkVoice = AppFlavor.text("zh_female_cancan_uranus_bigtts", "en_female_dacey_uranus_bigtts")
+    @AppStorage("volcArkSpeed") private var volcArkSpeed = 1.0
     @State private var microsoftTTSKey = Settings.microsoftTTSKey   // Keychain-backed
     @AppStorage("microsoftTTSRegion") private var microsoftTTSRegion = "eastasia"
     @AppStorage("microsoftTTSVoice") private var microsoftTTSVoice = "zh-CN-XiaoxiaoNeural"
@@ -99,6 +106,10 @@ struct ServicesView: View {
     private var volcanoConfigured: Bool {
         !volcAppId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !volcToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var volcanoArkConfigured: Bool {
+        !volcArkKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var microsoftConfigured: Bool {
@@ -145,6 +156,7 @@ struct ServicesView: View {
         }
         .onChange(of: llmAPIKey) { _, v in Settings.llmAPIKey = v }
         .onChange(of: volcToken) { _, v in Settings.volcToken = v }
+        .onChange(of: volcArkKey) { _, v in Settings.volcArkKey = v }
         .onChange(of: microsoftTTSKey) { _, v in Settings.microsoftTTSKey = v }
         .onChange(of: googleTTSKey) { _, v in Settings.googleTTSKey = v }
         .onChange(of: tencentTTSSecretKey) { _, v in Settings.tencentTTSSecretKey = v }
@@ -245,6 +257,13 @@ struct ServicesView: View {
                         selected: selection == .volcanoSpeech) {
                         selection = .volcanoSpeech
                     }
+                    row(title: AppFlavor.text("火山方舟语音合成", "Volcano Ark Speech"),
+                        subtitle: volcArkVoice,
+                        icon: "waveform.badge.plus",
+                        badge: speechBadge(engine: "volcanoArk", configured: volcanoArkConfigured),
+                        selected: selection == .volcanoArkSpeech) {
+                        selection = .volcanoArkSpeech
+                    }
                     row(title: AppFlavor.text("Microsoft 语音合成", "Microsoft Speech"),
                         subtitle: microsoftTTSVoice,
                         icon: "square.grid.2x2",
@@ -295,6 +314,8 @@ struct ServicesView: View {
                     localSpeechDetail
                 case .volcanoSpeech:
                     volcanoSpeechDetail
+                case .volcanoArkSpeech:
+                    volcanoArkSpeechDetail
                 case .microsoftSpeech:
                     microsoftSpeechDetail
                 case .googleSpeech:
@@ -520,6 +541,72 @@ struct ServicesView: View {
                 Speaker.shared.speak(AppFlavor.text("Dob，这是当前火山音色的试听效果。", "Dob. This is the current Volcengine voice."))
             }
             .disabled(!volcanoConfigured)
+        }
+    }
+
+    private var volcanoArkSpeechDetail: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            detailHeader(title: AppFlavor.text("火山方舟语音合成", "Volcano Ark Speech"),
+                         subtitle: AppFlavor.text("火山方舟（Ark）语音合成 2.0，鉴权更简单：只需一个专属 API Key，无需 App ID / Token / Cluster。",
+                                                  "Volcano Ark speech synthesis 2.0 — simpler auth than the classic engine: a single dedicated API Key, no App ID/Token/Cluster."),
+                         icon: "waveform.badge.plus",
+                         status: speechBadge(engine: "volcanoArk", configured: volcanoArkConfigured))
+            Button {
+                ttsEngine = "volcanoArk"
+            } label: {
+                Label(AppFlavor.text("设为当前语音服务", "Use as current speech service"), systemImage: "checkmark.circle")
+            }
+            .disabled(ttsEngine == "volcanoArk" || !volcanoArkConfigured)
+            serviceFields {
+                SecureField(AppFlavor.text("专属 API Key", "Dedicated API Key"), text: $volcArkKey)
+                Picker(AppFlavor.text("模型版本", "Model version"), selection: $volcArkResourceId) {
+                    ForEach(VolcanoArkResourceIds.all, id: \.self) { id in
+                        Text(id).tag(id)
+                    }
+                    if !VolcanoArkResourceIds.all.contains(volcArkResourceId) {
+                        Text(AppFlavor.text("自定义（\(volcArkResourceId)）", "Custom (\(volcArkResourceId))")).tag(volcArkResourceId)
+                    }
+                }
+                Picker(AppFlavor.text("常用音色", "Common voice"), selection: $volcArkVoice) {
+                    ForEach(VolcanoVoices.all) { voice in
+                        Text(voice.name).tag(voice.id)
+                    }
+                    if !VolcanoVoices.all.contains(where: { $0.id == volcArkVoice }) {
+                        Text(AppFlavor.text("自定义（\(volcArkVoice)）", "Custom (\(volcArkVoice))")).tag(volcArkVoice)
+                    }
+                }
+                TextField(AppFlavor.text("自定义 speaker（可选）", "Custom speaker (optional)"), text: $volcArkVoice)
+                HStack {
+                    Text(AppFlavor.text("语速", "Speed"))
+                    Slider(value: $volcArkSpeed, in: 0.5...2.0)
+                    Text(String(format: "%.1fx", volcArkSpeed))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+            connectionTestRow(key: "tts-volcanoArk",
+                              title: AppFlavor.text("检测接口", "Test API"),
+                              disabled: !volcanoArkConfigured) {
+                testSpeechConnection(key: "tts-volcanoArk", provider: .volcanoArk)
+            }
+            HStack {
+                Link(AppFlavor.text("获取专属 API Key ↗", "Get dedicated API Key ↗"),
+                     destination: Self.volcArkKeyConsoleURL)
+                Spacer()
+                Link(AppFlavor.text("接口文档 ↗", "API docs ↗"), destination: Self.volcArkSpeechDocsURL)
+            }
+            .font(.caption)
+            if !volcanoArkConfigured {
+                helperText(AppFlavor.text("未填专属 API Key 时，朗读会自动回退到 macOS 本地语音。",
+                                          "When the dedicated API key is missing, reading automatically falls back to macOS Speech."))
+                    .foregroundStyle(.orange)
+            }
+            Button(AppFlavor.text("试听", "Test Voice")) {
+                ttsEngine = "volcanoArk"
+                Settings.speechRate = Float(rate)
+                Speaker.shared.speak(AppFlavor.text("Dob，这是当前火山方舟音色的试听效果。", "Dob. This is the current Volcano Ark voice."))
+            }
+            .disabled(!volcanoArkConfigured)
         }
     }
 
@@ -1144,6 +1231,7 @@ struct ServicesView: View {
     private static func defaultSpeechSelection() -> Selection {
         switch Settings.ttsEngine {
         case "volcano": return .volcanoSpeech
+        case "volcanoArk": return .volcanoArkSpeech
         case "microsoft": return .microsoftSpeech
         case "google": return .googleSpeech
         case "tencent": return .tencentSpeech

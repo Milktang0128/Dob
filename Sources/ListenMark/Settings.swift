@@ -303,7 +303,7 @@ enum Settings {
 
     // MARK: Speech engine
 
-    /// "local" (macOS), "volcano", "microsoft", "google", "tencent", or "minimax".
+    /// "local" (macOS), "volcano", "volcanoArk", "microsoft", "google", "tencent", or "minimax".
     static var ttsEngine: String {
         get {
             let e = d.string(forKey: "ttsEngine") ?? ""
@@ -344,6 +344,38 @@ enum Settings {
     }
 
     static var volcConfigured: Bool { !volcAppId.isEmpty && !volcToken.isEmpty }
+
+    /// 火山方舟（Ark）专属 API Key — separate credential from the classic
+    /// AppID/Token/Cluster above; authenticates the newer V3 speech API
+    /// (`X-Api-Key` header) at `/api/v3/plan/tts/unidirectional`.
+    static var volcArkKey: String {
+        get { KeychainStore.get("volcArkKey") ?? "" }
+        set { KeychainStore.set(newValue, key: "volcArkKey") }
+    }
+
+    /// `X-Api-Resource-Id`: selects model version and billing (e.g. seed-tts-2.0).
+    static var volcArkResourceId: String {
+        get {
+            let v = d.string(forKey: "volcArkResourceId") ?? ""
+            return v.isEmpty ? "seed-tts-2.0" : v
+        }
+        set { d.set(newValue, forKey: "volcArkResourceId") }
+    }
+
+    static var volcArkVoice: String {
+        get {
+            let v = d.string(forKey: "volcArkVoice") ?? ""
+            return v.isEmpty ? AppFlavor.text("zh_female_cancan_uranus_bigtts", "en_female_dacey_uranus_bigtts") : v
+        }
+        set { d.set(newValue, forKey: "volcArkVoice") }
+    }
+
+    static var volcArkSpeed: Double {
+        get { d.object(forKey: "volcArkSpeed") == nil ? 1.0 : d.double(forKey: "volcArkSpeed") }
+        set { d.set(newValue, forKey: "volcArkSpeed") }
+    }
+
+    static var volcArkConfigured: Bool { !volcArkKey.isEmpty }
 
     static var microsoftTTSKey: String {
         get { KeychainStore.get("microsoftTTSKey") ?? "" }
@@ -675,7 +707,7 @@ enum Settings {
         guard !d.bool(forKey: flag) else { return }
 
         let standaloneKeys = [
-            "deepseekKey", "volcToken", "microsoftTTSKey", "googleTTSKey",
+            "deepseekKey", "volcToken", "volcArkKey", "microsoftTTSKey", "googleTTSKey",
             "tencentTTSSecretKey", "minimaxKey", "compareProvider1APIKey", "compareProvider2APIKey"
         ]
         for key in standaloneKeys {

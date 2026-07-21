@@ -185,6 +185,11 @@ enum MiniMaxVoices {
     ]
 }
 
+/// 火山方舟（Ark）语音合成的 `X-Api-Resource-Id`：选择模型版本，也决定计费方式。
+enum VolcanoArkResourceIds {
+    static let all: [String] = ["seed-tts-2.0", "seed-tts-1.0", "seed-tts-1.0-concurr"]
+}
+
 enum VolcanoTTSError: Error {
     case notConfigured
     case http(Int, String)
@@ -240,6 +245,71 @@ enum VolcanoTTS {
               let audio = Data(base64Encoded: b64) else {
             throw VolcanoTTSError.api(code, (obj["message"] as? String) ?? AppFlavor.text("未知错误", "Unknown error"))
         }
+        return audio
+    }
+}
+
+/// 火山方舟（Ark）语音合成 2.0 — HTTP Chunked `/api/v3/plan/tts/unidirectional`.
+/// Auth is the `X-Api-Key` + `X-Api-Resource-Id` header pair (专属 API Key),
+/// distinct from the classic AppID/Token/Cluster flow above. The response body
+/// is not one JSON object but newline-delimited JSON lines, each either an
+/// audio chunk (`code:0`, base64 in `data`) or the terminal success/error line
+/// (`code:20000000` = done, anything else = error).
+enum VolcanoArkTTS {
+    static func synthesize(_ text: String) async throws -> Data {
+        guard Settings.volcArkConfigured else { throw VolcanoTTSError.notConfigured }
+
+        var req = URLRequest(url: URL(string: "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional")!)
+        req.httpMethod = "POST"
+        req.setValue(Settings.volcArkKey, forHTTPHeaderField: "X-Api-Key")
+        req.setValue(Settings.volcArkResourceId, forHTTPHeaderField: "X-Api-Resource-Id")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // speech_rate is linear over the documented range: -50 → 0.5x, 0 → 1.0x, 100 → 2.0x.
+        let speechRate = min(max(Int(((Settings.volcArkSpeed - 1.0) * 100).rounded()), -50), 100)
+        let body: [String: Any] = [
+            "req_params": [
+                "text": text,
+                "speaker": Settings.volcArkVoice,
+                "audio_params": [
+                    "format": "mp3",
+                    "sample_rate": 24000,
+                    "speech_rate": speechRate
+                ]
+            ]
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard let http = resp as? HTTPURLResponse else { throw VolcanoTTSError.noAudio }
+        guard (200..<300).contains(http.statusCode) else {
+            throw VolcanoTTSError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+
+        var audio = Data()
+        var lastError: (code: Int, message: String)?
+        let bodyText = String(data: data, encoding: .utf8) ?? ""
+        for line in bodyText.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty,
+                  let lineData = trimmed.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  let code = obj["code"] as? Int else { continue }
+            if code == 0 {
+                if let b64 = obj["data"] as? String, let chunk = Data(base64Encoded: b64) {
+                    audio.append(chunk)
+                }
+            } else if code == 20_000_000 {
+                break
+            } else {
+                lastError = (code, (obj["message"] as? String) ?? "")
+            }
+        }
+        if audio.isEmpty, let lastError {
+            throw VolcanoTTSError.api(lastError.code,
+                                      lastError.message.isEmpty ? AppFlavor.text("未知错误", "Unknown error") : lastError.message)
+        }
+        guard !audio.isEmpty else { throw VolcanoTTSError.noAudio }
         return audio
     }
 }
