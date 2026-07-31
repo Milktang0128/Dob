@@ -175,6 +175,7 @@ final class PanelModel: ObservableObject {
     @Published var inputText: String = ""
     @Published var pinned = false
     @Published var canCompare = false
+    @Published var canContinueListening = false
     @Published var selectedCompareID: String?
     @Published var disableAppName: String?
     @Published var webActionMode: SelectionWebAction.Mode?
@@ -205,13 +206,14 @@ final class PanelModel: ObservableObject {
     var onReplay: (() -> Void)?
     var onStop: (() -> Void)?
     var onRetry: (() -> Void)?
-    var onArchive: (() -> Void)?
-    var onArchiveOriginal: (() -> Void)?
+    var onArchive: (([String]) -> Void)?
+    var onArchiveOriginal: (([String]) -> Void)?
     var onCopyOriginal: (() -> Bool)?
     var onCopyResult: ((String) -> Bool)?
     var onCopyKeyboard: (() -> Bool)?
     var onWebAction: (() -> Bool)?
     var onCompare: (() -> Void)?
+    var onContinueListening: (() -> Bool)?
     var onTogglePin: (() -> Void)?
     var onAutoSpeakChanged: ((Bool) -> Void)?
     var onDisableForCurrentApp: (() -> Void)?
@@ -227,12 +229,8 @@ struct ActionPanelView: View {
     @ObservedObject var model: PanelModel
     @ObservedObject private var store = ActionStore.shared
     @ObservedObject private var speaker = Speaker.shared
-    @State private var showOriginalCopyBubble = false
-    @State private var showResultCopyBubble = false
-    @State private var originalCopyArchived = false
-    @State private var resultCopyArchived = false
-    @State private var originalCopyToken = UUID()
-    @State private var resultCopyToken = UUID()
+    @State private var showOriginalArchivePopover = false
+    @State private var showResultArchivePopover = false
     @State private var inputFocusRequest = 0
     @State private var followUpFocusRequest = 0
     @AppStorage("autoSpeakAI") private var autoSpeakAI = true
@@ -302,9 +300,7 @@ struct ActionPanelView: View {
                 .help(mode == .link ? AppFlavor.text("打开链接", "Open Link") : AppFlavor.text("搜索原文", "Search Selection"))
             }
             Button {
-                if model.onCopyOriginal?() == true {
-                    presentOriginalCopyBubble()
-                }
+                _ = model.onCopyOriginal?()
             } label: {
                 Image(systemName: "doc.on.doc").frame(width: 18)
                     .font(.system(size: 13, weight: .semibold))
@@ -315,11 +311,22 @@ struct ActionPanelView: View {
             .buttonStyle(.plain)
             .fixedSize()
             .help(AppFlavor.text("复制原文", "Copy Original"))
-            .popover(isPresented: $showOriginalCopyBubble, arrowEdge: .bottom) {
-                CopyArchiveBubble(archived: originalCopyArchived) {
-                    model.onArchiveOriginal?()
-                    originalCopyArchived = true
-                    dismissOriginalCopyBubble(after: 0.65)
+
+            Button {
+                showOriginalArchivePopover = true
+            } label: {
+                Image(systemName: "tray.and.arrow.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 34)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help(AppFlavor.text("留档原文", "Save Original"))
+            .popover(isPresented: $showOriginalArchivePopover, arrowEdge: .bottom) {
+                ArchiveTagPopover(isPresented: $showOriginalArchivePopover) { tags in
+                    model.onArchiveOriginal?(tags)
                 }
             }
 
@@ -645,30 +652,23 @@ struct ActionPanelView: View {
                 playbackSpeedMenu
             }
             Button {
-                if model.onCopyResult?(text) == true {
-                    presentResultCopyBubble()
-                }
+                _ = model.onCopyResult?(text)
             } label: {
                 Image(systemName: "doc.on.doc").frame(width: 18)
             }
             .buttonStyle(.bordered)
             .help(AppFlavor.text("复制结果", "Copy Result"))
-            .popover(isPresented: $showResultCopyBubble, arrowEdge: .bottom) {
-                CopyArchiveBubble(archived: archived || resultCopyArchived,
-                                  canArchive: replay && !archived && !resultCopyArchived) {
-                    model.onArchive?()
-                    resultCopyArchived = true
-                    dismissResultCopyBubble(after: 0.65)
-                }
-            }
-            if replay {
-                Button { if !archived { model.onArchive?() } } label: {
-                    Image(systemName: archived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down").frame(width: 18)
+            archiveResultButton(archived: archived)
+            if replay && model.canContinueListening {
+                Button {
+                    if model.onContinueListening?() == true {
+                        model.canContinueListening = false
+                    }
+                } label: {
+                    Label(AppFlavor.text("继续听", "Continue"), systemImage: "forward.end.fill")
                 }
                 .buttonStyle(.bordered)
-                .tint(archived ? .accentColor : nil)   // neutral until saved, accent after
-                .disabled(archived)
-                .help(archived ? AppFlavor.text("已留档", "Saved") : AppFlavor.text("留档", "Save"))
+                .help(AppFlavor.text("从选中内容之后继续朗读全文", "Continue reading after the selection"))
             }
             if replay && model.canCompare && !model.isConversing {
                 Button { model.onCompare?() } label: {
@@ -793,35 +793,36 @@ struct ActionPanelView: View {
         Speaker.shared.refreshPlaybackRate()
     }
 
+    private func archiveResultButton(archived: Bool) -> some View {
+        Button {
+            showResultArchivePopover = true
+        } label: {
+            Image(systemName: archived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down").frame(width: 18)
+        }
+        .buttonStyle(.bordered)
+        .tint(archived ? .accentColor : nil)
+        .disabled(archived)
+        .help(archived ? AppFlavor.text("已留档", "Saved") : AppFlavor.text("留档", "Save"))
+        .popover(isPresented: $showResultArchivePopover, arrowEdge: .bottom) {
+            ArchiveTagPopover(isPresented: $showResultArchivePopover) { tags in
+                model.onArchive?(tags)
+            }
+        }
+    }
+
     private func compareControls(text: String, archived: Bool) -> some View {
         HStack(spacing: 7) {
             Button { model.onStop?() } label: { Image(systemName: "stop.fill").frame(width: 18) }
                 .buttonStyle(.bordered)
                 .help(AppFlavor.text("停止", "Stop"))
             Button {
-                if model.onCopyResult?(text) == true {
-                    presentResultCopyBubble()
-                }
+                _ = model.onCopyResult?(text)
             } label: {
                 Image(systemName: "doc.on.doc").frame(width: 18)
             }
             .buttonStyle(.bordered)
             .help(AppFlavor.text("复制全部比较结果", "Copy All Compare Results"))
-            .popover(isPresented: $showResultCopyBubble, arrowEdge: .bottom) {
-                CopyArchiveBubble(archived: archived || resultCopyArchived,
-                                  canArchive: !archived && !resultCopyArchived) {
-                    model.onArchive?()
-                    resultCopyArchived = true
-                    dismissResultCopyBubble(after: 0.65)
-                }
-            }
-            Button { if !archived { model.onArchive?() } } label: {
-                Image(systemName: archived ? "tray.and.arrow.down.fill" : "tray.and.arrow.down").frame(width: 18)
-            }
-            .buttonStyle(.bordered)
-            .tint(archived ? .accentColor : nil)
-            .disabled(archived)
-            .help(archived ? AppFlavor.text("已留档", "Saved") : AppFlavor.text("留档", "Save"))
+            archiveResultButton(archived: archived)
             Spacer()
             Button { model.onClose?() } label: { Image(systemName: "xmark").frame(width: 18) }
                 .buttonStyle(.bordered).help(AppFlavor.text("关闭", "Close"))
@@ -1065,69 +1066,39 @@ struct ActionPanelView: View {
         .joined(separator: "\n\n---\n\n")
     }
 
-    private func presentOriginalCopyBubble() {
-        originalCopyArchived = false
-        showOriginalCopyBubble = true
-        dismissOriginalCopyBubble(after: 3)
-    }
-
-    private func presentResultCopyBubble() {
-        resultCopyArchived = false
-        showResultCopyBubble = true
-        dismissResultCopyBubble(after: 3)
-    }
-
-    private func dismissOriginalCopyBubble(after delay: TimeInterval) {
-        let token = UUID()
-        originalCopyToken = token
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            if originalCopyToken == token {
-                showOriginalCopyBubble = false
-            }
-        }
-    }
-
-    private func dismissResultCopyBubble(after delay: TimeInterval) {
-        let token = UUID()
-        resultCopyToken = token
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            if resultCopyToken == token {
-                showResultCopyBubble = false
-            }
-        }
-    }
 }
 
 // MARK: - Pieces
 
-private struct CopyArchiveBubble: View {
-    let archived: Bool
-    var canArchive = true
-    let onArchive: () -> Void
+private struct ArchiveTagPopover: View {
+    @Binding var isPresented: Bool
+    let onArchive: ([String]) -> Void
+    @State private var rawTags = ""
+    @FocusState private var isInputFocused: Bool
 
     var body: some View {
-        HStack(spacing: 9) {
-            Label(AppFlavor.text("已复制", "Copied"), systemImage: "checkmark.circle.fill")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-            if archived {
-                Text(AppFlavor.text("已留档", "Saved"))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-            } else if canArchive {
-                Divider().frame(height: 18)
-                Button {
-                    onArchive()
-                } label: {
-                    Label(AppFlavor.text("留档", "Save"), systemImage: "tray.and.arrow.down.fill")
-                }
-                .buttonStyle(.borderless)
-                .font(.system(size: 12, weight: .semibold))
+        VStack(alignment: .leading, spacing: 10) {
+            Text(AppFlavor.text("添加标签", "Add Tags"))
+                .font(.system(size: 13, weight: .semibold))
+            TextField(AppFlavor.text("用逗号分隔，例如：写作、量子", "Comma-separated, for example: writing, research"), text: $rawTags)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 250)
+                .focused($isInputFocused)
+                .onSubmit(save)
+            HStack {
+                Button(AppFlavor.text("取消", "Cancel")) { isPresented = false }
+                Spacer()
+                Button(AppFlavor.text("留档", "Save"), action: save)
+                    .buttonStyle(.borderedProminent)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .fixedSize()
+        .padding(12)
+        .onAppear { isInputFocused = true }
+    }
+
+    private func save() {
+        onArchive(ArchiveTags.parse(rawTags))
+        isPresented = false
     }
 }
 

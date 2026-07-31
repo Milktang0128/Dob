@@ -45,6 +45,9 @@ struct Entry: Identifiable, Codable {
     var comparison: ComparisonRecord? = nil
     var contextUsed: Bool?
     var contextExcerpt: String?
+    /// Intentional, user-entered labels. Optional so archives written before
+    /// labels existed continue decoding without migration.
+    var tags: [String]? = nil
     // Multi-turn conversation (nil for single-shot entries; back-compatible).
     var conversationTurns: [ConversationTurn]? = nil
     // Spaced-repetition state (optional → back-compatible with old archives).
@@ -83,6 +86,30 @@ struct ConversationState {
     var startedAt: Date = Date()
     var archived: Bool = false         // committed to the Archive at least once
     var committedEntryID: UUID?        // archive Entry id, so re-commits update in place
+    var archiveTags: [String] = []     // user-entered labels preserved across re-commits
+}
+
+enum ArchiveTags {
+    static func parse(_ raw: String) -> [String] {
+        let separators = CharacterSet(charactersIn: ",，、;；\n\t")
+        let parts = raw.components(separatedBy: separators)
+        var result: [String] = []
+
+        for part in parts {
+            let tag = part
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+            guard !tag.isEmpty,
+                  tag.count <= 40,
+                  !result.contains(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) else { continue }
+            result.append(tag)
+        }
+        return result
+    }
+
+    static func merging(_ existing: [String], with additions: [String]) -> [String] {
+        parse((existing + additions).joined(separator: ","))
+    }
 }
 
 /// Silent recent-history item. This deliberately omits full-text context so it

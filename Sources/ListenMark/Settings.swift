@@ -517,6 +517,35 @@ enum Settings {
         set { d.set(newValue, forKey: "archiveFolder") }
     }
 
+    /// Optional global shortcut for saving the result currently visible in Dob.
+    /// No default avoids claiming a shortcut the user may already rely on.
+    static var archiveHotKeyCode: Int? {
+        get { d.object(forKey: "archiveHkCode") == nil ? nil : d.integer(forKey: "archiveHkCode") }
+        set {
+            if let newValue { d.set(newValue, forKey: "archiveHkCode") }
+            else { d.removeObject(forKey: "archiveHkCode") }
+        }
+    }
+
+    static var archiveHotKeyMods: Int? {
+        get { d.object(forKey: "archiveHkMods") == nil ? nil : d.integer(forKey: "archiveHkMods") }
+        set {
+            if let newValue { d.set(newValue, forKey: "archiveHkMods") }
+            else { d.removeObject(forKey: "archiveHkMods") }
+        }
+    }
+
+    static var archiveHotKeyDisplay: String {
+        get { d.string(forKey: "archiveHkDisplay") ?? "" }
+        set { d.set(newValue, forKey: "archiveHkDisplay") }
+    }
+
+    static func clearArchiveHotKey() {
+        d.removeObject(forKey: "archiveHkCode")
+        d.removeObject(forKey: "archiveHkMods")
+        d.removeObject(forKey: "archiveHkDisplay")
+    }
+
     static var historyEnabled: Bool {
         get { d.object(forKey: "historyEnabled") == nil ? true : d.bool(forKey: "historyEnabled") }
         set { d.set(newValue, forKey: "historyEnabled") }

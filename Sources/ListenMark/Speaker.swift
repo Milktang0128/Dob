@@ -78,6 +78,42 @@ final class Speaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
+    /// Append newly requested text behind the active speech pipeline. While cloud
+    /// audio is still being generated or played this preserves the current queue;
+    /// after it has finished it simply starts a fresh continuation.
+    @discardableResult
+    func continueSpeaking(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return false }
+
+        if let provider = activeCloudProvider {
+            let chunks = CloudTTS.textChunks(t, provider: provider)
+            guard !chunks.isEmpty else { return false }
+            // If the original request has already rendered in full, retain its
+            // exact audio for Replay before extending the live queue. Otherwise
+            // a later Replay intentionally regenerates only the original text.
+            if let cacheText = activeCacheText, cloudQueue.isEmpty, !cloudSynthesizing {
+                lastGeneratedAudio = (cacheText, activeGeneratedChunks, true)
+            } else {
+                lastGeneratedAudio = nil
+            }
+            // The live run now includes more than the original result, so its
+            // eventual completion must not overwrite that result-only cache.
+            activeCacheText = nil
+            cloudQueue.append(contentsOf: chunks)
+            startDrainIfNeeded()
+            return true
+        }
+
+        if synth.isSpeaking && !synth.isPaused {
+            localSpeak(t)
+            return true
+        }
+
+        speak(t)
+        return true
+    }
+
     // MARK: Streaming
 
     func startStream() {

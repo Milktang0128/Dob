@@ -236,6 +236,13 @@ private struct EntryCard: View {
                 }
             }
 
+            if let tags = entry.tags, !tags.isEmpty {
+                Text(tags.map { "#\($0)" }.joined(separator: "  "))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             Text(entry.original)
                 .font(.system(size: 13))
                 .foregroundStyle(responseText == nil ? .primary : .secondary)

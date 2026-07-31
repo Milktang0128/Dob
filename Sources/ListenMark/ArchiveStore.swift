@@ -123,6 +123,9 @@ final class ArchiveStore: ObservableObject {
             if e.contextUsed == true {
                 md += "_\(AppFlavor.text("已附带上下文", "Context included"))_\n\n"
             }
+            if let tags = e.tags, !tags.isEmpty {
+                md += tags.map { "#\($0)" }.joined(separator: " ") + "\n\n"
+            }
             let quotedOriginal = ArchiveMarkdownFormatter.quoteBlock(e.original)
             if !quotedOriginal.isEmpty {
                 md += "\(quotedOriginal)\n\n"

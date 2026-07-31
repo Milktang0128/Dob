@@ -389,7 +389,7 @@ final class ActionPanel: NSPanel {
             return true
         }
         if command, keyCode == kVK_ANSI_S {
-            model.onArchive?()
+            model.onArchive?([])
             return true
         }
         if command, keyCode == kVK_ANSI_C {

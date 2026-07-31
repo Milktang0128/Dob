@@ -20,6 +20,7 @@ private struct OperationSnapshot {
     var currentResult: String
     var currentAction: ActionDef?
     var currentContextUsed: Bool
+    var canContinueListening: Bool
     var pendingEntry: Entry?
     var lastAutoArchivedEntry: Entry?
     var conversation: ConversationState?
@@ -219,16 +220,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.onRetry = { [weak self] in
             self?.retryCurrentAction()
         }
-        m.onArchive = { [weak self] in
+        m.onArchive = { [weak self] tags in
             guard let self else { return }
             if self.conversation != nil {
-                self.commitConversation(updatePanel: true)
+                self.commitConversation(updatePanel: true, tags: tags)
             } else {
-                self.archivePendingEntry(updatePanel: true)
+                self.archivePendingEntry(tags: tags, updatePanel: true)
             }
         }
-        m.onArchiveOriginal = { [weak self] in
-            self?.archiveOriginalCopy()
+        m.onArchiveOriginal = { [weak self] tags in
+            self?.archiveOriginalCopy(tags: tags)
         }
         m.onCopyOriginal = { [weak self] in
             guard let self else { return false }
@@ -250,6 +251,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         m.onCompare = { [weak self] in
             self?.startCompare()
+        }
+        m.onContinueListening = { [weak self] in
+            self?.continueListeningFromContext() ?? false
         }
         m.onTogglePin = { [weak self] in
             self?.togglePanelPin()
@@ -349,6 +353,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.toggleRestorePanel()
         }) {
             NSLog("Dob · \(AppFlavor.text("显示面板快捷键注册失败", "restore panel hotkey registration failed"))：\(Settings.restoreHotKeyDisplay)")
+        }
+        if let keyCode = Settings.archiveHotKeyCode,
+           let modifiers = Settings.archiveHotKeyMods,
+           !Settings.archiveHotKeyDisplay.isEmpty,
+           !HotkeyManager.shared.register(id: 6,
+                                            keyCode: UInt32(keyCode),
+                                            carbonModifiers: UInt32(modifiers),
+                                            onFire: { [weak self] in
+                                                self?.archiveVisibleResultFromHotkey()
+                                            }) {
+            NSLog("Dob · archive current result hotkey registration failed: \(Settings.archiveHotKeyDisplay)")
         }
         registerActionHotKeys()
         triggerMenuItem?.title = "\(AppFlavor.text("处理选中文本", "Process Selection"))  \(Settings.hotKeyDisplay)"
@@ -1000,6 +1015,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             currentResult: currentResult,
             currentAction: currentAction,
             currentContextUsed: currentContextUsed,
+            canContinueListening: panel.model.canContinueListening,
             pendingEntry: pendingEntry,
             lastAutoArchivedEntry: lastAutoArchivedEntry,
             conversation: conversation,
@@ -1042,6 +1058,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentResult = s.currentResult
         currentAction = s.currentAction
         currentContextUsed = s.currentContextUsed
+        panel.model.canContinueListening = s.canContinueListening
         pendingEntry = s.pendingEntry
         lastAutoArchivedEntry = s.lastAutoArchivedEntry
         conversation = s.conversation
@@ -1593,6 +1610,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentContextUsed = contextUsed
         panel.model.canCompare = action.needsLLM
         panel.model.canFollowUp = false
+        panel.model.canContinueListening = false
 
         let entry = Entry(action: AppFlavor.text("比较 · \(action.name)", "Compare · \(action.name)"),
                           icon: "rectangle.split.3x1",
@@ -1625,6 +1643,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentAction = action
         currentContextUsed = contextUsed
         panel.model.canCompare = action.needsLLM
+        panel.model.canContinueListening = contextUsed && continuationTextAfterSelection() != nil
         let entry = Entry(action: action.name, icon: action.icon, sourceApp: source,
                           sourceMetadata: sourceMetadata,
                           original: original, response: response, contextUsed: contextUsed,
@@ -1840,6 +1859,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         panel.model.priorTurns = prior
         panel.model.conversationAtTurnLimit = conversationAtTurnLimit()
+        panel.model.canContinueListening = state.contextUsed && continuationTextAfterSelection() != nil
         panel.model.phase = .result(action: action.name, icon: action.icon, text: liveText,
                                     replay: true, archived: state.archived, compact: false,
                                     contextUsed: state.contextUsed)
@@ -1847,8 +1867,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Archive the live conversation as ONE entry (turns + last assistant answer
     /// as `response`), plus one lightweight history record. Idempotent per turn.
-    private func commitConversation(updatePanel: Bool) {
-        guard let state = conversation else { return }
+    private func commitConversation(updatePanel: Bool, tags: [String] = []) {
+        guard var state = conversation else { return }
+        let normalizedTags = ArchiveTags.parse(tags.joined(separator: ","))
+        if !normalizedTags.isEmpty {
+            state.archiveTags = ArchiveTags.merging(state.archiveTags, with: normalizedTags)
+            state.archived = false
+            conversation = state
+        }
         if let committed = commitThread(state) {
             conversation = committed
         }
@@ -1874,6 +1900,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                           original: original, response: lastAnswer,
                           responseModel: state.provider.model,
                           contextUsed: state.contextUsed, contextExcerpt: state.contextExcerpt,
+                          tags: state.archiveTags.isEmpty ? nil : state.archiveTags,
                           conversationTurns: state.turns)
         if isFirstCommit {
             ArchiveStore.shared.add(entry)
@@ -1905,6 +1932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         currentContextUsed = contextUsed
         panel.model.canCompare = action.needsLLM && action.id != "dialogue"
         panel.model.canFollowUp = action.needsLLM
+        panel.model.canContinueListening = contextUsed && continuationTextAfterSelection() != nil
         panel.model.phase = .result(action: action.name, icon: action.icon, text: firstAnswer,
                                     replay: true, archived: true, compact: false,
                                     contextUsed: contextUsed)
@@ -2123,6 +2151,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return SelectionGrabber.axContextText(for: selectedText, source: currentContextSource) ?? ""
     }
 
+    /// The model may have received source metadata without the actual document;
+    /// only expose Continue when there is real text after the selected passage.
+    private func continuationTextAfterSelection() -> String? {
+        let context = currentContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !context.isEmpty, !selected.isEmpty,
+              let range = context.range(of: selected, options: [.caseInsensitive, .diacriticInsensitive])
+                ?? compactRange(of: selected, in: context) else { return nil }
+
+        let remainder = String(context[range.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return remainder.isEmpty ? nil : remainder
+    }
+
+    @discardableResult
+    private func continueListeningFromContext() -> Bool {
+        guard currentContextUsed, let continuation = continuationTextAfterSelection() else { return false }
+        return Speaker.shared.continueSpeaking(continuation)
+    }
+
     private func contextExcerpt(from context: String, selectedText: String, radius: Int = 200) -> String? {
         let cleanContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
         let selected = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2229,16 +2277,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return ActionStore.shared.actions.first { $0.id == id && $0.enabled }
     }
 
-    private func archiveOriginalCopy() {
+    private func archiveOriginalCopy(tags: [String] = []) {
         refreshCurrentSourceForAction()
+        guard !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let parsedTags = ArchiveTags.parse(tags.joined(separator: ","))
         let entry = Entry(action: AppFlavor.text("摘录", "Clip"), icon: "doc.on.doc", sourceApp: currentSource,
                           sourceMetadata: currentSourceMetadata,
-                          original: currentText, response: nil)
+                          original: currentText, response: nil,
+                          tags: parsedTags.isEmpty ? nil : parsedTags)
         ArchiveStore.shared.add(entry)
     }
 
-    private func archivePendingEntry(updatePanel: Bool) {
-        guard let entry = pendingEntry else { return }
+    private func archiveVisibleResultFromHotkey() {
+        guard panel.isVisible else { return }
+        if conversation != nil {
+            commitConversation(updatePanel: true)
+        } else {
+            archivePendingEntry(updatePanel: true)
+        }
+    }
+
+    private func archivePendingEntry(tags: [String] = [], updatePanel: Bool) {
+        guard var entry = pendingEntry else { return }
+        let normalizedTags = ArchiveTags.parse(tags.joined(separator: ","))
+        let mergedTags = ArchiveTags.merging(entry.tags ?? [], with: normalizedTags)
+        entry.tags = mergedTags.isEmpty ? nil : mergedTags
         ArchiveStore.shared.add(entry)
         pendingEntry = nil
         guard updatePanel else { return }

@@ -48,6 +48,7 @@ struct SettingsView: View {
     @AppStorage("autoArchive") private var autoArchive = false
     @AppStorage("historyEnabled") private var historyEnabled = true
     @AppStorage("archiveFolder") private var archiveFolder = ""
+    @AppStorage("archiveHkDisplay") private var archiveHkDisplay = ""
     @AppStorage("appLanguage") private var appLanguage = "system"
 
     @State private var disabledAppsRevision = 0
@@ -357,6 +358,22 @@ struct SettingsView: View {
             SettingToggle(title: AppFlavor.text("自动留档每次动作", "Auto-save every action"),
                           subtitle: AppFlavor.text("关闭后，只在你点击「留档」时保存。", "When off, Dob saves only when you click Save."),
                           isOn: $autoArchive)
+            HotkeySetting(title: AppFlavor.text("立即留档", "Save current result"),
+                          subtitle: AppFlavor.text("保存当前工具条中的结果；未设置时不会占用任何全局快捷键。",
+                                                   "Saves the result currently open in Dob. No global shortcut is reserved until you set one."),
+                          display: $archiveHkDisplay,
+                          onRecord: { code, mods, disp in
+                              Settings.archiveHotKeyCode = Int(code)
+                              Settings.archiveHotKeyMods = carbonModifiers(mods)
+                              Settings.archiveHotKeyDisplay = disp
+                              archiveHkDisplay = disp
+                              NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+                          },
+                          onClear: {
+                              Settings.clearArchiveHotKey()
+                              archiveHkDisplay = ""
+                              NotificationCenter.default.post(name: .gebwConfigChanged, object: nil)
+                          })
             archiveLocationControls
             Divider()
             archiveSubsectionHeader(icon: "clock.arrow.circlepath",
@@ -497,6 +514,7 @@ private struct HotkeySetting: View {
     let subtitle: String
     @Binding var display: String
     var onRecord: (UInt16, NSEvent.ModifierFlags, String) -> Void
+    var onClear: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -509,8 +527,20 @@ private struct HotkeySetting: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            HotkeyRecorder(display: $display, onRecord: onRecord)
-                .frame(width: 176, height: 22)
+            HStack(spacing: 6) {
+                HotkeyRecorder(display: Binding(get: {
+                    display.isEmpty ? AppFlavor.text("未设置", "Not Set") : display
+                }, set: { display = $0 }), onRecord: onRecord)
+                    .frame(width: 176, height: 22)
+                if let onClear, !display.isEmpty {
+                    Button(action: onClear) {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help(AppFlavor.text("清除快捷键", "Clear hotkey"))
+                }
+            }
         }
     }
 }
