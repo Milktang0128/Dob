@@ -187,6 +187,8 @@ final class ActionPanel: NSPanel {
 
     /// Toolbar width measured from the visible skills' labels. Extra enabled
     /// skills stay in the overflow menu, so the panel does not keep growing.
+    /// Keep this in lockstep with `ActionPanelView.toolbar`: a missing utility
+    /// button here makes SwiftUI compress action labels into ellipses.
     private func computeWidth() -> CGFloat {
         let font = NSFont.systemFont(ofSize: 12)
         let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
@@ -201,8 +203,15 @@ final class ActionPanel: NSPanel {
             w += 16 + iconW + 5 + ceil(labelW)
             childCount += 1
         }
-        w += 5 + 26 + 26 + 26 + 22 + 22   // divider + search/link + copy + ··· menu + pin + × close
-        childCount += 6
+        // Divider, optional link/search, copy, archive, overflow menu, pin, close.
+        w += 5
+        childCount += 1
+        if model.webActionMode != nil {
+            w += 26
+            childCount += 1
+        }
+        w += 26 + 26 + 26 + 22 + 22
+        childCount += 5
         w += CGFloat(max(childCount - 1, 0)) * 2
         return max(minPanelWidth, ceil(w))
     }

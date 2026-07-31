@@ -820,13 +820,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func showPanel(minWidth: CGFloat = 320, allowsKeyboardFocus: Bool = false) {
         panelIsFadingOut = false
         panel.level = .floating
+        // The toolbar width depends on whether the current text exposes a
+        // search/link action, so determine it before the panel measures itself.
+        updatePanelWebAction()
         panel.showNearMouse(minWidth: minWidth,
                             allowsKeyboardFocus: allowsKeyboardFocus,
                             avoiding: currentSelectionBounds)
         panel.model.canCompare = false
         panel.model.selectedCompareID = nil
         panel.model.disableAppName = currentDisableCandidate()?.appName
-        updatePanelWebAction()
         panelShownAt = Date()
         panelDismissAnchor = NSEvent.mouseLocation
         refreshOutsideMonitor()

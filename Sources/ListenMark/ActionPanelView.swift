@@ -1124,6 +1124,7 @@ private struct ActionItem: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
         .onHover { hover = $0 }
     }
 
